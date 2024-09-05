@@ -1,6 +1,8 @@
 import re
 import os
 from pypdf import PdfReader, PdfWriter
+from pypdf.errors import EmptyFileError
+
 from pathlib import Path
 import pandas as pd
 import sys
@@ -24,7 +26,13 @@ def split_bill_pdfs(pdf_file_path, output_dir="output_pdfs",  start_keyword="www
     
     # Un peu compliqué, en vrai séparer en sous pdfs puis trier les pdfs après en regroup ou indiv me parait plus simple
     # Ouvrir le fichier PDF
-    reader = PdfReader(pdf_file_path)
+    try:
+        reader = PdfReader(pdf_file_path)
+        # Continuez avec le reste du traitement
+    except EmptyFileError as e:
+        print(f"Erreur : {e}")
+        return
+    #reader = PdfReader(pdf_file_path)
     num_pages = len(reader.pages)
     writer = None
 
@@ -150,6 +158,10 @@ def merge_pdfs_by_group(groups, merge_dir):
         print(f"Fusionné: {group}.pdf")
     return merged_pdf_files
 
+
+def group_name_from_filename(filename: str) -> str:
+    return ' - '.join(filename.stem.replace(' - ', '-').split('-')[2:])
+
 def sort_pdfs_by_group(df, groups, pdl_dir, group_dir, merge_dir):
     uncopied = []
     # print(list(filenames))
@@ -181,11 +193,10 @@ def sort_pdfs_by_group(df, groups, pdl_dir, group_dir, merge_dir):
         # Supposons que le format du fichier est du type 'date-EPIC_HABITAT_REGION - GROUP - MORE_GROUP_INFO.pdf'
         # On veut extraire le groupe entre les deux tirets dans le nom du fichier.
         
-        group_name = ' - '.join(pdf_file.stem.replace(' - ', '-').split('-')[2:])
+        group_name = group_name_from_filename(pdf_file)
 
         # Définir le chemin du dossier de destination basé sur le groupe
         destination_dir = merge_dir / group_name
-
         # Créer le répertoire cible s'il n'existe pas
         destination_dir.mkdir(parents=True, exist_ok=True)
 
@@ -247,6 +258,8 @@ if __name__ == "__main__":
     # Chemin du dossier principal contenant les factures unitaires
     # RENTRER LE NOM DU DOSSIER ICI
     data_dir = "~/data/enargia/multisite_legacy/test_data"
+    data_dir = "~/data/enargia/multisite/bordereau"
+    data_dir = "~/data/enargia/multisite_pap/"
 
     data_dir = Path(data_dir).expanduser()
     output_dir = data_dir / "output" / "extract"
@@ -264,7 +277,7 @@ if __name__ == "__main__":
     print("Défusionnage des factures unitaires...")
     # Dans chaque gros PDF : si Référence PDL ok (aka 14 num) on extrait les pages corresp
     split_unit_bills(data_dir / 'input', output_dir / "indiv")
-    print("Fin du défusionnage des factures globales \n")
+    print("Fin du défusionnage des factures unitaires \n")
 
     print(f"Lecture du fichier Excel 'factures details.xlsx' pour retrouver les regroupement et PDL associés")
     # Lecture des données Excel
@@ -274,6 +287,12 @@ if __name__ == "__main__":
     if "nan" in groups:
         groups = groups.remove("nan")
 
+    # Filtrer les groupes pour n'avoir que ceux trouvés dans split_global_bills
+    global_bills_dir = output_dir / "regroupe"
+    found_groups = set([group_name_from_filename(f) for f in global_bills_dir.glob("*.pdf")])
+
+    print(found_groups)
+    groups = [group for group in groups if group in found_groups]
     print(groups)
     print("Tri des fichiers Excel défusionnés \n")
     sort_xls_by_group(df, groups, merge_dir)
