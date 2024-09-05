@@ -139,6 +139,11 @@ def merge_pdfs_by_group(groups, merge_dir):
         # ajoute la facture globale en premier
         for pdf in pdf_files:
             if normalize(group) in normalize(pdf.name) and not pdf.name.startswith("Table"):
+                # Extraire la date et le nom du fichier
+                filename_parts = pdf.stem.split('-')
+                if len(filename_parts) >= 2:
+                    date = filename_parts[0].strip()
+                    name = filename_parts[1].strip()
                 merger.append(pdf)
                 pdf_files.remove(pdf)
 
@@ -156,11 +161,12 @@ def merge_pdfs_by_group(groups, merge_dir):
                     pdf_files.remove(pdf)
         if len(pdf_files) != 0:
             print(f"Certains PDF n'ont pas été fusionnés: {pdf_files}")
-            
-        merger.write((merge_dir) / f"{group}.pdf")
-        merged_pdf_files.append(merge_dir / f"{group}.pdf")
+        
+        name = 'CAPB' if name == 'COMMUNAUTE_AGGLOMERATION_PAYS_BASQUE' else name
+        merger.write((merge_dir) / f"{date}-{name}-{group}.pdf")
+        merged_pdf_files.append(merge_dir / f"{date}-{name}-{group}.pdf")
         merger.close()
-        print(f"Fusionné: {group}.pdf")
+        print(f"Fusionné: {date}-{name}-{group}.pdf")
     return merged_pdf_files
 
 
