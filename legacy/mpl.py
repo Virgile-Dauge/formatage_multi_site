@@ -5,7 +5,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 def export_table_as_pdf(df, pdf_filename):
     # Fixe la police utilisee
-    plt.rcParams['font.family'] = 'Arial'
+    plt.rcParams['font.family'] = 'DejaVu Sans'
     rows_per_page = 40
     # Détermine le nombre de pages nécessaires
     num_pages = len(df) // rows_per_page + int(len(df) % rows_per_page != 0)
