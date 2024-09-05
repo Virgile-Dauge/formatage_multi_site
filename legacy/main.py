@@ -5,6 +5,10 @@ from pathlib import Path
 import pandas as pd
 import sys
 import fitz
+import shutil
+
+from itertools import chain
+
 from mpl import export_table_as_pdf
 
 
@@ -13,9 +17,12 @@ from mpl import export_table_as_pdf
 date_pattern = r'VOTRE FACTURE DU (\d{2})\/(\d{2})\/(\d{4})'
 client_name_pattern = r'Nom et Prénom ou\s* Raison Sociale :\s*(.*)'
 group_name_pattern = r'Regroupement de facturation\s*:\s*\((.*?)\)'
+group_name_pattern = r'Regroupement de facturation\s*:\s*\(([\s\S]*?)\)'
 pdl_pattern = r'Référence PDL : (\d{14})'
 
 def split_bill_pdfs(pdf_file_path, output_dir="output_pdfs",  start_keyword="www.enargia.eus", regex_dict=None):
+    
+    # Un peu compliqué, en vrai séparer en sous pdfs puis trier les pdfs après en regroup ou indiv me parait plus simple
     # Ouvrir le fichier PDF
     reader = PdfReader(pdf_file_path)
     num_pages = len(reader.pages)
@@ -37,6 +44,7 @@ def split_bill_pdfs(pdf_file_path, output_dir="output_pdfs",  start_keyword="www
             if writer:
                 # Enregistrer le PDF précédent avant de commencer un nouveau
                 if "group_name" in regex_dict.keys() and group_name and date and client_name:
+                    print(group_name)
                     output_pdf_path = os.path.join(output_dir, f"{date}-{client_name} - {group_name}.pdf")
                 elif "pdl_name" in regex_dict.keys() and pdl_name and date and client_name:
                     output_pdf_path = os.path.join(output_dir, f"{date}-{client_name} - {pdl_name}.pdf")
@@ -65,7 +73,7 @@ def split_bill_pdfs(pdf_file_path, output_dir="output_pdfs",  start_keyword="www
             # Extraire le nom du groupement
             group_name_match = re.search(group_name_pattern, text, re.DOTALL)
             if group_name_match:
-                group_name = group_name_match.group(1).strip().replace("\n","")
+                group_name = group_name_match.group(1).strip().replace("\n"," ")
 
             pdl_match = re.search(pdl_pattern, text)
             if pdl_match:
@@ -86,7 +94,6 @@ def split_bill_pdfs(pdf_file_path, output_dir="output_pdfs",  start_keyword="www
         if output_pdf_path:
             with open(output_pdf_path, "wb") as output_pdf:
                 writer.write(output_pdf)
-
 
 def split_pdfs_recursive(data_dir, output_dir, regex_dict):
 
@@ -143,28 +150,80 @@ def merge_pdfs_by_group(groups, merge_dir):
         print(f"Fusionné: {group}.pdf")
     return merged_pdf_files
 
+def sort_pdfs_by_group(df, groups, pdl_dir, group_dir, merge_dir):
+    uncopied = []
+    # print(list(filenames))
+    for pdf_file in pdl_dir.glob('*.pdf'):
+        # Extraire le PDL à partir du nom de fichier (ex: _123456789.pdf)
+        # On suppose que le numéro PDL est avant l'extension du fichier
+        pdl_number = pdf_file.stem.split('-')[-1].replace(' ', '')  #le PDL est après le dernier '-'
 
-def sort_pdfs_by_group(df, groups, output_dir, merge_dir):
-    for group in groups:
-        pdls = df[df["groupement"] == group]["PRM"]
-        for pdl in pdls:
-            for filename in output_dir.iterdir():
-                if str(pdl) in filename.name and filename.suffix == ".pdf":
-                    print(filename)
-                    filename.rename(merge_dir / group / filename.name)
-                elif normalize(group) in normalize(filename.name):
-                    filename.rename(merge_dir / group / filename.name)
+        # Chercher ce PDL dans le DataFrame
+        matching_row = df[df['PRM'] == int(pdl_number)]
+        
+        if not matching_row.empty:
+            # Obtenir le nom du dossier groupement correspondant
+            groupement_dir = str(matching_row['groupement'].values[0])
 
-def sort_xls_by_group(df, groups,  merge_dir=None):
-    # Filtrer les données pour le groupement spécifique
+            # Définir le chemin du dossier de destination
+            destination_dir = merge_dir / groupement_dir
+            
+            # Créer le dossier de destination s'il n'existe pas
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Copier le fichier PDF dans le bon dossier
+            shutil.copy(pdf_file, destination_dir / pdf_file.name)
+        else:
+            uncopied += [pdf_file]
+        
+    for pdf_file in group_dir.glob('*.pdf'):
+        # Extraire le nom du groupe à partir du nom de fichier
+        # Supposons que le format du fichier est du type 'date-EPIC_HABITAT_REGION - GROUP - MORE_GROUP_INFO.pdf'
+        # On veut extraire le groupe entre les deux tirets dans le nom du fichier.
+        
+        group_name = ' - '.join(pdf_file.stem.replace(' - ', '-').split('-')[2:])
+
+        # Définir le chemin du dossier de destination basé sur le groupe
+        destination_dir = merge_dir / group_name
+
+        # Créer le répertoire cible s'il n'existe pas
+        destination_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copier le fichier PDF dans le bon dossier
+        shutil.copy(pdf_file, destination_dir / pdf_file.name)
+         
+    print(f'Uncopied files : {uncopied}')
+
+def sort_xls_by_group(df, groups, merge_dir=None):
+    """
+    Trie le fichier Excel par groupement et crée un excel par groupement dans des sous-dossiers spécifiques.
+
+    Paramètres:
+    df (DataFrame): Le DataFrame contenant les données à trier.
+    groups (list): Liste des groupements uniques.
+    merge_dir (Path, optionnel): Le répertoire où les fichiers triés seront enregistrés. Par défaut, None.
+
+    Cette fonction filtre les données pour chaque groupement spécifique, réorganise les colonnes pour
+    que la colonne 'groupement' soit en premier, et enregistre les données triées dans un fichier Excel
+    dans un sous-dossier nommé d'après le groupement.
+    """
+    # Nom de la colonne de groupement
     group_col_name = "groupement"
+    
     for group in groups:
+        # Filtrer les données pour le groupement spécifique
         df_groupement = df[df[group_col_name] == group]
+        
+        # Réorganiser les colonnes pour que 'groupement' soit en premier
         colonnes = [group_col_name] + [col for col in df.columns if col != group_col_name]
         df_groupement = df_groupement[colonnes]
+        
+        # Créer le répertoire pour le groupement s'il n'existe pas
         group_dir = merge_dir / str(group)
         group_dir.mkdir(exist_ok=True)
-        df_groupement.to_excel( group_dir / f"{group}.xlsx", index=False)
+        
+        # Enregistrer les données triées dans un fichier Excel
+        df_groupement.to_excel(group_dir / f"{group}.xlsx", index=False)
 
 def export_tables_as_pdf(groups, merge_dir):
     for group in groups:
@@ -174,7 +233,6 @@ def export_tables_as_pdf(groups, merge_dir):
 
 def normalize(string):
     return str(string).replace(" ", "").replace("-", "").lower()
-
 
 def compress_pdfs(pdf_files, output_dir):
     for pdf_file in pdf_files:
@@ -188,32 +246,35 @@ if __name__ == "__main__":
 
     # Chemin du dossier principal contenant les factures unitaires
     # RENTRER LE NOM DU DOSSIER ICI
-    data_dir = "./test_data"
+    data_dir = "~/data/enargia/multisite_legacy/test_data"
 
-    data_dir = Path(data_dir)
-    output_dir = data_dir / "extract"
-    output_dir.mkdir(exist_ok=True)
-    merge_dir = data_dir / "merge"
-    merge_dir.mkdir(exist_ok=True)
-    res_dir = data_dir / "results"
-    res_dir.mkdir(exist_ok=True)
+    data_dir = Path(data_dir).expanduser()
+    output_dir = data_dir / "output" / "extract"
+    output_dir.mkdir(exist_ok=True, parents=True)
+    merge_dir = data_dir / "output" / "merge"
+    merge_dir.mkdir(exist_ok=True, parents=True)
+    res_dir = data_dir / "output" / "results"
+    res_dir.mkdir(exist_ok=True, parents=True)
 
     print("Défusionnage des factures globales...")
-    split_global_bills(data_dir, output_dir)
+    # Dans chaque gros PDF : Si "Regroupement de facturation" on extrait les pages corresp
+    split_global_bills(data_dir / 'input', output_dir / "regroupe")
     print("Fin du défusionnage des factures globales \n")
 
     print("Défusionnage des factures unitaires...")
-    split_unit_bills(data_dir, output_dir)
+    # Dans chaque gros PDF : si Référence PDL ok (aka 14 num) on extrait les pages corresp
+    split_unit_bills(data_dir / 'input', output_dir / "indiv")
     print("Fin du défusionnage des factures globales \n")
 
     print(f"Lecture du fichier Excel 'factures details.xlsx' pour retrouver les regroupement et PDL associés")
     # Lecture des données Excel
-    df = pd.read_excel(data_dir / "factures details.xlsx", sheet_name='Sheet1')
+    df = pd.read_excel(data_dir / 'input' / "factures details.xlsx", sheet_name='Sheet1')
     groups = df.groupby("groupement").filter(lambda x: len(x)>=1)["groupement"].unique()
 
     if "nan" in groups:
         groups = groups.remove("nan")
 
+    print(groups)
     print("Tri des fichiers Excel défusionnés \n")
     sort_xls_by_group(df, groups, merge_dir)
 
@@ -221,7 +282,7 @@ if __name__ == "__main__":
     export_tables_as_pdf(groups, merge_dir)
 
     print("Tri des fichiers PDF défusionnés \n")
-    sort_pdfs_by_group(df, groups, output_dir, merge_dir)
+    sort_pdfs_by_group(df, groups, output_dir / 'indiv', output_dir / 'regroupe', merge_dir)
 
     print("Fusion des PDF par groupement")
     merged_pdf_files = merge_pdfs_by_group(groups, merge_dir)
