@@ -2,6 +2,17 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
+import logging
+from rich.logging import RichHandler
+
+# Configuration du logger pour utiliser Rich
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler()]
+)
+logger = logging.getLogger()
 
 def export_table_as_pdf(df, pdf_filename):
     # Fixe la police utilisee
@@ -75,6 +86,6 @@ def export_table_as_pdf(df, pdf_filename):
 
             plt.close(fig)
 
-    print(f"Le fichier PDF '{pdf_filename}' a été créé avec succès.")
+    logger.info(f"Le fichier PDF '{pdf_filename}' a été créé avec succès.")
 
 

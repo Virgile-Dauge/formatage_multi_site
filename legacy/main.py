@@ -1,5 +1,6 @@
 import re
 import os
+import logging
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import EmptyFileError
 import argparse
@@ -9,10 +10,17 @@ import sys
 import fitz
 import shutil
 
-from itertools import chain
-
 from mpl import export_table_as_pdf
+from rich.logging import RichHandler
 
+# Configuration du logger pour utiliser Rich
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler()]
+)
+logger = logging.getLogger()
 
 # POUR UTILISER CE SCRIPT, DESCENDRE A LA LIGNE "__name__" == "__main__"
 # Regex patterns pour extraire les informations
@@ -30,7 +38,7 @@ def split_bill_pdfs(pdf_file_path, output_dir="output_pdfs",  start_keyword="www
         reader = PdfReader(pdf_file_path)
         # Continuez avec le reste du traitement
     except EmptyFileError as e:
-        print(f"Erreur : {e}")
+        logger.error(f"Erreur : {e} '{pdf_file_path}'")
         return
     #reader = PdfReader(pdf_file_path)
     num_pages = len(reader.pages)
@@ -52,7 +60,7 @@ def split_bill_pdfs(pdf_file_path, output_dir="output_pdfs",  start_keyword="www
             if writer:
                 # Enregistrer le PDF précédent avant de commencer un nouveau
                 if "group_name" in regex_dict.keys() and group_name and date and client_name:
-                    print(group_name)
+                    logger.info(f"Enregistrement du PDF: {date}-{client_name} - {group_name}.pdf")
                     output_pdf_path = os.path.join(output_dir, f"{date}-{client_name} - {group_name}.pdf")
                 elif "pdl_name" in regex_dict.keys() and pdl_name and date and client_name:
                     output_pdf_path = os.path.join(output_dir, f"{date}-{client_name} - {pdl_name}.pdf")
@@ -104,11 +112,10 @@ def split_bill_pdfs(pdf_file_path, output_dir="output_pdfs",  start_keyword="www
                 writer.write(output_pdf)
 
 def split_pdfs_recursive(data_dir, output_dir, regex_dict):
-
-    print(f"Parcours du répertoire {data_dir}")
+    logger.info(f"Parcours du répertoire {data_dir}")
     for file in data_dir.iterdir():
         if file.is_file() and file.suffix == ".pdf":
-            print(f"Défusionnage du fichier {file}")
+            logger.info(f"Extraction des pdfs dans le fichier {file}")
             split_bill_pdfs(file, output_dir, "www.enargia.eus", regex_dict)
         elif file.is_dir() and not file.name == output_dir.name :
             split_pdfs_recursive(file, output_dir, regex_dict)
@@ -133,7 +140,7 @@ def merge_pdfs_by_group(groups, merge_dir):
         pdf_files = [filename for filename in (merge_dir / group).iterdir() if filename.suffix == ".pdf"]
         
         if len(pdf_files) != len(pdls) + 2:
-            print(f"Le nombre de fichiers PDF ({len(pdf_files)}) ne correspond pas au nombre de PDL ({len(pdls)}) pour le groupe {group}.")
+            logger.warning(f"Le nombre de fichiers PDF ({len(pdf_files)}) ne correspond pas au nombre de PDL ({len(pdls)}) pour le groupe {group}.")
 
         merger = PdfWriter()
         # ajoute la facture globale en premier
@@ -160,13 +167,13 @@ def merge_pdfs_by_group(groups, merge_dir):
                     merger.append(pdf)
                     pdf_files.remove(pdf)
         if len(pdf_files) != 0:
-            print(f"Certains PDF n'ont pas été fusionnés: {pdf_files}")
+            logger.warning(f"Certains PDF n'ont pas été fusionnés: {pdf_files}")
         
         name = 'CAPB' if name == 'COMMUNAUTE_AGGLOMERATION_PAYS_BASQUE' else name
         merger.write((merge_dir) / f"{date}-{name}-{group}.pdf")
         merged_pdf_files.append(merge_dir / f"{date}-{name}-{group}.pdf")
         merger.close()
-        print(f"Fusionné: {date}-{name}-{group}.pdf")
+        logger.info(f"Fusionné: {date}-{name}-{group}.pdf")
     return merged_pdf_files
 
 
@@ -214,8 +221,8 @@ def sort_pdfs_by_group(df, groups, pdl_dir, group_dir, merge_dir):
         else:
             # Copier le fichier PDF dans le bon dossier
             shutil.copy(pdf_file, destination_dir / pdf_file.name)
-         
-    print(f'Uncopied files : {uncopied}')
+    if uncopied:   
+        logger.warn(f'Uncopied files : {uncopied}')
 
 def sort_xls_by_group(df, groups, merge_dir=None):
     """
@@ -279,7 +286,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Définir le répertoire de données")
     parser.add_argument("data_dir", type=str, help="Le chemin du répertoire de données")
     args = parser.parse_args()
-
+    
     data_dir = args.data_dir
 
     data_dir = Path(data_dir).expanduser()
@@ -290,17 +297,17 @@ if __name__ == "__main__":
     res_dir = data_dir / "output" / "results"
     res_dir.mkdir(exist_ok=True, parents=True)
 
-    print("Défusionnage des factures globales...")
+    logger.info("Défusionnage des factures globales...")
     # Dans chaque gros PDF : Si "Regroupement de facturation" on extrait les pages corresp
     split_global_bills(data_dir / 'input', output_dir / "regroupe")
-    print("Fin du défusionnage des factures globales \n")
+    logger.info("Fin du défusionnage des factures globales \n")
 
-    print("Défusionnage des factures unitaires...")
+    logger.info("Défusionnage des factures unitaires...")
     # Dans chaque gros PDF : si Référence PDL ok (aka 14 num) on extrait les pages corresp
     split_unit_bills(data_dir / 'input', output_dir / "indiv")
-    print("Fin du défusionnage des factures unitaires \n")
+    logger.info("Fin du défusionnage des factures unitaires \n")
 
-    print(f"Lecture du fichier Excel 'factures details.xlsx' pour retrouver les regroupement et PDL associés")
+    logger.info(f"Lecture du fichier Excel 'factures details.xlsx' pour retrouver les regroupement et PDL associés")
     # Lecture des données Excel
     df = pd.read_excel(data_dir / 'input' / "factures details.xlsx", sheet_name='Sheet1')
     groups = df.groupby("groupement").filter(lambda x: len(x)>=1)["groupement"].unique()
@@ -312,23 +319,21 @@ if __name__ == "__main__":
     global_bills_dir = output_dir / "regroupe"
     found_groups = set([group_name_from_filename(f) for f in global_bills_dir.glob("*.pdf")])
 
-    print(found_groups)
+    logger.info(found_groups)
     groups = [group for group in groups if group in found_groups]
-    print(groups)
-    print("Tri des fichiers Excel défusionnés \n")
+    logger.info(groups)
+    logger.info("Tri des fichiers Excel défusionnés \n")
     sort_xls_by_group(df, groups, merge_dir)
 
-    print("Export en PDF des tableurs Excel  \n")
+    logger.info("Export en PDF des tableurs Excel  \n")
     export_tables_as_pdf(groups, merge_dir)
 
-    print("Tri des fichiers PDF défusionnés \n")
+    logger.info("Tri des fichiers PDF défusionnés \n")
     sort_pdfs_by_group(df, groups, output_dir / 'indiv', output_dir / 'regroupe', merge_dir)
 
-    print("Fusion des PDF par groupement")
+    logger.info("Fusion des PDF par groupement")
     merged_pdf_files = merge_pdfs_by_group(groups, merge_dir)
-    print("Fin de la fusion")
+    logger.info("Fin de la fusion")
 
-    print("Reduce PDF size")
+    logger.info("Reduce PDF size")
     compress_pdfs(merged_pdf_files, res_dir)
-
-    # Clean folders
