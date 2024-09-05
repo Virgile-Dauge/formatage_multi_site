@@ -2,7 +2,7 @@ import re
 import os
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import EmptyFileError
-
+import argparse
 from pathlib import Path
 import pandas as pd
 import sys
@@ -274,7 +274,13 @@ if __name__ == "__main__":
     # RENTRER LE NOM DU DOSSIER ICI
     # data_dir = "~/data/enargia/multisite_legacy/test_data"
     # data_dir = "~/data/enargia/multisite/bordereau"
-    data_dir = "~/data/enargia/multisite_pap/"
+    
+
+    parser = argparse.ArgumentParser(description="Définir le répertoire de données")
+    parser.add_argument("data_dir", type=str, help="Le chemin du répertoire de données")
+    args = parser.parse_args()
+
+    data_dir = args.data_dir
 
     data_dir = Path(data_dir).expanduser()
     output_dir = data_dir / "output" / "extract"
