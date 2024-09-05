@@ -131,6 +131,10 @@ def merge_pdfs_by_group(groups, merge_dir):
         pdls = df["PRM"]
         group = str(group)
         pdf_files = [filename for filename in (merge_dir / group).iterdir() if filename.suffix == ".pdf"]
+        
+        if len(pdf_files) != len(pdls) + 2:
+            print(f"Le nombre de fichiers PDF ({len(pdf_files)}) ne correspond pas au nombre de PDL ({len(pdls)}) pour le groupe {group}.")
+
         merger = PdfWriter()
         # ajoute la facture globale en premier
         for pdf in pdf_files:
@@ -152,6 +156,7 @@ def merge_pdfs_by_group(groups, merge_dir):
                     pdf_files.remove(pdf)
         if len(pdf_files) != 0:
             print(f"Certains PDF n'ont pas été fusionnés: {pdf_files}")
+            
         merger.write((merge_dir) / f"{group}.pdf")
         merged_pdf_files.append(merge_dir / f"{group}.pdf")
         merger.close()
@@ -198,10 +203,11 @@ def sort_pdfs_by_group(df, groups, pdl_dir, group_dir, merge_dir):
         # Définir le chemin du dossier de destination basé sur le groupe
         destination_dir = merge_dir / group_name
         # Créer le répertoire cible s'il n'existe pas
-        destination_dir.mkdir(parents=True, exist_ok=True)
-
-        # Copier le fichier PDF dans le bon dossier
-        shutil.copy(pdf_file, destination_dir / pdf_file.name)
+        if not destination_dir.exists():
+            uncopied += [pdf_file]
+        else:
+            # Copier le fichier PDF dans le bon dossier
+            shutil.copy(pdf_file, destination_dir / pdf_file.name)
          
     print(f'Uncopied files : {uncopied}')
 
@@ -254,11 +260,14 @@ def compress_pdfs(pdf_files, output_dir):
 
 
 if __name__ == "__main__":
-
+    # En gros : dans le dossier data_dir doivent se trouver : 
+    # - Un dossier input dans lequel il doit y avoir "factures details.xlsx", 
+    # et des dossiers/sous dossiers peu importe avec les .pdf unitaires + les pdf de regroupement
+    # L'arboresence de input et le chemin des pdf importe peu tant que le xslx est à la racine
     # Chemin du dossier principal contenant les factures unitaires
     # RENTRER LE NOM DU DOSSIER ICI
-    data_dir = "~/data/enargia/multisite_legacy/test_data"
-    data_dir = "~/data/enargia/multisite/bordereau"
+    # data_dir = "~/data/enargia/multisite_legacy/test_data"
+    # data_dir = "~/data/enargia/multisite/bordereau"
     data_dir = "~/data/enargia/multisite_pap/"
 
     data_dir = Path(data_dir).expanduser()
@@ -287,7 +296,7 @@ if __name__ == "__main__":
     if "nan" in groups:
         groups = groups.remove("nan")
 
-    # Filtrer les groupes pour n'avoir que ceux trouvés dans split_global_bills
+    # Filtrer les groupes pour n'avoir que ceux trouvés dans les factures de regroupement
     global_bills_dir = output_dir / "regroupe"
     found_groups = set([group_name_from_filename(f) for f in global_bills_dir.glob("*.pdf")])
 
