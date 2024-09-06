@@ -332,9 +332,13 @@ if __name__ == "__main__":
         logger.warning(errors)
 
 
-    logger.info(f"Lecture du fichier Excel 'factures details.xlsx' pour retrouver les regroupement et PDL associés")
+    logger.info(f"Lecture du fichier Excel 'lien.xlsx' pour retrouver les regroupement et PDL associés")
+    if not (data_dir / 'input' / "lien.xlsx").exists():
+        logger.warning("Le fichier 'lien.xlsx' est introuvable. Arrêt de l'exécution.")
+        sys.exit(0)
+        
     # Lecture des données Excel
-    df = pd.read_excel(data_dir / 'input' / "factures details.xlsx", sheet_name='Sheet1')
+    df = pd.read_excel(data_dir / 'input' / "lien.xlsx", sheet_name='Sheet1')
     groups = df.groupby("groupement").filter(lambda x: len(x)>=1)["groupement"].unique()
 
     if "nan" in groups:
