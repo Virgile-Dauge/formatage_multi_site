@@ -24,7 +24,7 @@ Ce programme permet de défusionner, réorganiser, et refusionner des documents 
 3. **Résultats**:
 
     Voici l'architecture des résultats après exécution du programme:
-
+    ```
     data_dir/
     ├── input
     │   ├── dossiers_imbriques
@@ -39,7 +39,7 @@ Ce programme permet de défusionner, réorganiser, et refusionner des documents 
         │   ├── GROUPEMENT1
         │   └── GROUPEMENT2
         └── results
-
+    ```
     - Les factures de groupement consolidées (synthèse + tableau + factures individuelles) sont générés dans le sous-dossier `results/`
     - Le programme crée également un dossier `extract/` dans lequel sont extraites toutes les factures , 
     - A des fin de débuggage le dossier `merge/` pour les documents PDF et Excel avant fusion.
