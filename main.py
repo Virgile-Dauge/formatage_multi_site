@@ -1,5 +1,4 @@
 import re
-import os
 import logging
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import EmptyFileError
@@ -22,7 +21,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger()
 
-# POUR UTILISER CE SCRIPT, DESCENDRE A LA LIGNE "__name__" == "__main__"
 # Regex patterns pour extraire les informations
 date_pattern = r'VOTRE FACTURE DU (\d{2})\/(\d{2})\/(\d{4})'
 client_name_pattern = r'Nom et Prénom ou\s* Raison Sociale :\s*(.*)'
@@ -292,7 +290,6 @@ def compress_pdfs(pdf_files, output_dir):
             doc.save(output_dir / pdf_file.name, garbage=4, deflate=True)
             doc.close()
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Définir le répertoire de données")
     parser.add_argument("data_dir", type=str, help="Le chemin du répertoire de données")
@@ -314,8 +311,8 @@ if __name__ == "__main__":
     group, indiv, errors = split_pdfs(data_dir / 'input', output_dir, regex_dict)
     logger.info("Fin d'extraction des factures.")
     logger.info("Factures extraites :")
-    logger.info(f" - {len(group)} groupes")
-    logger.info(f" - {len(indiv)} individuelles")
+    logger.info(f" - {len(set(group))} groupes")
+    logger.info(f" - {len(set(indiv))} individuelles")
     if errors:
         logger.warning("Erreurs :")
         logger.warning(errors)
