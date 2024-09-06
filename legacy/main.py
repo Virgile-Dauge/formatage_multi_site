@@ -48,8 +48,8 @@ def split_bill_pdfs(pdf_file_path, output_dir="output_pdfs",  start_keyword="www
     client_name = None
     group_name = None
     pdl_name = None
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    (output_dir / 'group').mkdir(exist_ok=True, parents=True)
+    (output_dir / 'indiv').mkdir(exist_ok=True, parents=True)
 
     for i in range(num_pages):
         page = reader.pages[i]
@@ -59,11 +59,12 @@ def split_bill_pdfs(pdf_file_path, output_dir="output_pdfs",  start_keyword="www
         if start_keyword in text:
             if writer:
                 # Enregistrer le PDF précédent avant de commencer un nouveau
-                if "group_name" in regex_dict.keys() and group_name and date and client_name:
+                if group_name and date and client_name:
                     logger.info(f"Enregistrement du PDF: {date}-{client_name} - {group_name}.pdf")
-                    output_pdf_path = os.path.join(output_dir, f"{date}-{client_name} - {group_name}.pdf")
-                elif "pdl_name" in regex_dict.keys() and pdl_name and date and client_name:
-                    output_pdf_path = os.path.join(output_dir, f"{date}-{client_name} - {pdl_name}.pdf")
+                    output_pdf_path = os.path.join(output_dir / 'group', f"{date}-{client_name} - {group_name}.pdf")
+                elif pdl_name and date and client_name:
+                    logger.info(f"Enregistrement du PDF: {date}-{client_name} - {pdl_name}.pdf")
+                    output_pdf_path = os.path.join(output_dir / 'indiv', f"{date}-{client_name} - {pdl_name}.pdf")
                 else:
                     output_pdf_path = None
                 if output_pdf_path:
@@ -101,10 +102,10 @@ def split_bill_pdfs(pdf_file_path, output_dir="output_pdfs",  start_keyword="www
 
     # Enregistrer le dernier PDF
     if writer:
-        if "group_name" in regex_dict.keys() and group_name and date and client_name:
-            output_pdf_path = os.path.join(output_dir, f"{date}-{client_name} - {group_name}.pdf")
-        elif "pdl_name" in regex_dict.keys() and pdl_name and date and client_name:
-            output_pdf_path = os.path.join(output_dir, f"{date}-{client_name} - {pdl_name}.pdf")
+        if group_name and date and client_name:
+            output_pdf_path = os.path.join(output_dir / 'group', f"{date}-{client_name} - {group_name}.pdf")
+        elif pdl_name and date and client_name:
+            output_pdf_path = os.path.join(output_dir / 'indiv', f"{date}-{client_name} - {pdl_name}.pdf")
         else:
             output_pdf_path = None
         if output_pdf_path:
@@ -112,7 +113,6 @@ def split_bill_pdfs(pdf_file_path, output_dir="output_pdfs",  start_keyword="www
                 writer.write(output_pdf)
 
 def split_pdfs_recursive(data_dir, output_dir, regex_dict):
-    logger.info(f"Parcours du répertoire {data_dir}")
     for file in data_dir.iterdir():
         if file.is_file() and file.suffix == ".pdf":
             logger.info(f"Extraction des pdfs dans le fichier {file}")
@@ -175,7 +175,6 @@ def merge_pdfs_by_group(groups, merge_dir):
         merger.close()
         logger.info(f"Fusionné: {date}-{name}-{group}.pdf")
     return merged_pdf_files
-
 
 def group_name_from_filename(filename: str) -> str:
     return ' - '.join(filename.stem.replace(' - ', '-').split('-')[2:])
@@ -297,15 +296,11 @@ if __name__ == "__main__":
     res_dir = data_dir / "output" / "results"
     res_dir.mkdir(exist_ok=True, parents=True)
 
-    logger.info("Défusionnage des factures globales...")
-    # Dans chaque gros PDF : Si "Regroupement de facturation" on extrait les pages corresp
-    split_global_bills(data_dir / 'input', output_dir / "regroupe")
-    logger.info("Fin du défusionnage des factures globales \n")
+    logger.info("Extraction des factures...")
+    regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "group_name": group_name_pattern, "pdl_name": pdl_pattern}
+    split_pdfs_recursive(data_dir / 'input', output_dir, regex_dict)
+    logger.info("Fin d'extraction des factures\n")
 
-    logger.info("Défusionnage des factures unitaires...")
-    # Dans chaque gros PDF : si Référence PDL ok (aka 14 num) on extrait les pages corresp
-    split_unit_bills(data_dir / 'input', output_dir / "indiv")
-    logger.info("Fin du défusionnage des factures unitaires \n")
 
     logger.info(f"Lecture du fichier Excel 'factures details.xlsx' pour retrouver les regroupement et PDL associés")
     # Lecture des données Excel
@@ -316,7 +311,7 @@ if __name__ == "__main__":
         groups = groups.remove("nan")
 
     # Filtrer les groupes pour n'avoir que ceux trouvés dans les factures de regroupement
-    global_bills_dir = output_dir / "regroupe"
+    global_bills_dir = output_dir / "group"
     found_groups = set([group_name_from_filename(f) for f in global_bills_dir.glob("*.pdf")])
 
     logger.info(found_groups)
@@ -329,7 +324,7 @@ if __name__ == "__main__":
     export_tables_as_pdf(groups, merge_dir)
 
     logger.info("Tri des fichiers PDF défusionnés \n")
-    sort_pdfs_by_group(df, groups, output_dir / 'indiv', output_dir / 'regroupe', merge_dir)
+    sort_pdfs_by_group(df, groups, output_dir / 'indiv', output_dir / 'group', merge_dir)
 
     logger.info("Fusion des PDF par groupement")
     merged_pdf_files = merge_pdfs_by_group(groups, merge_dir)
