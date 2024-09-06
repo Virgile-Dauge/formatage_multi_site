@@ -50,3 +50,27 @@ Ce programme permet de défusionner, réorganiser, et refusionner des documents 
 - **Fusionner les PDF**: Les fichiers PDF sont fusionnés par groupement, en incluant les factures globales et les tableaux récapitulatifs.
 - **Compression des PDF**: Les fichiers PDF fusionnés sont compressés pour réduire leur taille.
 
+### Cas d'usage :
+
+#### Extraction des pdf individuels 
+Tous les dossier d'entrée seront scannés à la recherche de pdf. 
+Tous les pdfs trouvés seront analysés pour en extraire les factures individuelles. Une facture est identifiées comme individuelle si elle matche le pattern suivant `r'Référence PDL : (\d{14})'´ autrement dit que l'on trouve bien dérrière _Référence PDL_ un pdl valide. (valide au sens qu'il est composé de 14 digits).
+
+ 1) Placer les dossiers d'entrées dans `data_dir/input`, pas besoin de `lien.xlsx`
+ 2) Exectution du script : 
+     ```
+    python3 main.py data_dir
+    ```
+ 3) Récupération des factures individuelles dans `data_dir/output/extract/indiv`
+
+#### Génération des factures multisites consolidées 
+Tous les dossier d'entrée seront scannés à la recherche de pdf.
+Tous les pdfs trouvés seront analysés pour en extraire les factures individuelles et groupées. 
+Pour chaque groupe, un tableau récapitulatif est généré à partir du `lien.xlsx`.
+Puis les factures multisite consolidées sont crées en concaténant la facture groupée, le tableau et toutes les factures individuelles
+ 1) Placer les dossiers d'entrées et  `lien.xlsx` à la racine de `data_dir/input`
+ 2) Exectution du script : 
+     ```
+    python3 main.py data_dir
+    ```
+ 3) Récupération des factures multisite consolidées dans `data_dir/output/results`
