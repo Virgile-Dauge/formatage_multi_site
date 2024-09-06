@@ -30,16 +30,23 @@ group_name_pattern = r'Regroupement de facturation\s*:\s*\((.*?)\)'
 group_name_pattern = r'Regroupement de facturation\s*:\s*\(([\s\S]*?)\)'
 pdl_pattern = r'Référence PDL : (\d{14})'
 
-def split_bill_pdfs(pdf_file_path, output_dir="output_pdfs",  start_keyword="www.enargia.eus", regex_dict=None):
-    
-    # Un peu compliqué, en vrai séparer en sous pdfs puis trier les pdfs après en regroup ou indiv me parait plus simple
+def safe_extract_text(page):
+    try:
+        return page.extract_text()
+    except AttributeError as e:
+        print(f"Error extracting text from page: {e}")
+        return None
+
+def split_pdf(pdf_file_path, output_dir="output_pdfs",  start_keyword="www.enargia.eus", regex_dict=None) -> tuple[list[Path], list[Path], Path]:
+    indiv = []
+    group = []
     # Ouvrir le fichier PDF
     try:
         reader = PdfReader(pdf_file_path)
         # Continuez avec le reste du traitement
     except EmptyFileError as e:
         logger.error(f"Erreur : {e} '{pdf_file_path}'")
-        return
+        return group, indiv, [pdf_file_path]
     #reader = PdfReader(pdf_file_path)
     num_pages = len(reader.pages)
     writer = None
@@ -53,23 +60,29 @@ def split_bill_pdfs(pdf_file_path, output_dir="output_pdfs",  start_keyword="www
 
     for i in range(num_pages):
         page = reader.pages[i]
-        text = page.extract_text()
+        text = safe_extract_text(page)
+        if text is None:
+            logger.error(f"Impossible d'extraire le texte de la page {i} de {pdf_file_path} Arrêt de l'exécution.")
+            return group, indiv, [pdf_file_path]
 
         # Rechercher le mot-clé indiquant le début d'un nouveau sous-PDF
         if start_keyword in text:
             if writer:
                 # Enregistrer le PDF précédent avant de commencer un nouveau
                 if group_name and date and client_name:
-                    logger.info(f"Enregistrement du PDF: {date}-{client_name} - {group_name}.pdf")
+                    # logger.info(f"Enregistrement du PDF: {date}-{client_name} - {group_name}.pdf")
                     output_pdf_path = os.path.join(output_dir / 'group', f"{date}-{client_name} - {group_name}.pdf")
+                    group += [output_pdf_path]
                 elif pdl_name and date and client_name:
-                    logger.info(f"Enregistrement du PDF: {date}-{client_name} - {pdl_name}.pdf")
+                    # logger.info(f"Enregistrement du PDF: {date}-{client_name} - {pdl_name}.pdf")
                     output_pdf_path = os.path.join(output_dir / 'indiv', f"{date}-{client_name} - {pdl_name}.pdf")
+                    indiv += [output_pdf_path]
                 else:
                     output_pdf_path = None
                 if output_pdf_path:
                     # Enlever les métadonnées pour alléger le fichier
                     with open(output_pdf_path, "wb") as output_pdf:
+                        logger.info(f"Enregistrement du PDF: {output_pdf_path}.")
                         writer.write(output_pdf)
                 writer = None
 
@@ -104,31 +117,42 @@ def split_bill_pdfs(pdf_file_path, output_dir="output_pdfs",  start_keyword="www
     if writer:
         if group_name and date and client_name:
             output_pdf_path = os.path.join(output_dir / 'group', f"{date}-{client_name} - {group_name}.pdf")
+            group += [output_pdf_path]
         elif pdl_name and date and client_name:
             output_pdf_path = os.path.join(output_dir / 'indiv', f"{date}-{client_name} - {pdl_name}.pdf")
+            indiv += [output_pdf_path]
         else:
             output_pdf_path = None
         if output_pdf_path:
             with open(output_pdf_path, "wb") as output_pdf:
                 writer.write(output_pdf)
+                
+    return group, indiv, []
 
-def split_pdfs_recursive(data_dir, output_dir, regex_dict):
-    for file in data_dir.iterdir():
-        if file.is_file() and file.suffix == ".pdf":
-            logger.info(f"Extraction des pdfs dans le fichier {file}")
-            split_bill_pdfs(file, output_dir, "www.enargia.eus", regex_dict)
-        elif file.is_dir() and not file.name == output_dir.name :
-            split_pdfs_recursive(file, output_dir, regex_dict)
-
-def split_global_bills(data_dir, output_dir):
-    # Factures globales par groupement
-    regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "group_name": group_name_pattern}
-    split_pdfs_recursive(data_dir, output_dir, regex_dict)
-
-def split_unit_bills(data_dir, output_dir):
-    # Factures unitaires
-    regex_dict = {"date": date_pattern, "client_name": client_name_pattern, "pdl_name": pdl_pattern}
-    split_pdfs_recursive(data_dir, output_dir,  regex_dict)
+def split_pdfs(input_dir: Path, output_dir: Path, regex_dict) -> tuple[list[Path], list[Path], list[Path]]:
+    """
+    Cette fonction divise les fichiers PDF trouvés dans le répertoire d'entrée en fonction des expressions régulières fournies.
+    
+    Paramètres:
+    input_dir (Path): Le répertoire contenant les fichiers PDF à traiter.
+    output_dir (Path): Le répertoire où les fichiers PDF divisés seront enregistrés.
+    regex_dict (dict): Un dictionnaire contenant les motifs regex pour extraire les informations nécessaires des PDF.
+    
+    Retourne:
+    tuple: Trois listes contenant respectivement les chemins des fichiers PDF de groupe, les chemins des fichiers PDF individuels et les erreurs rencontrées.
+    """
+    pdfs = list(input_dir.rglob('*.pdf'))
+    logger.info(f"{len(pdfs)} pdfs détectés dans {input_dir}")
+    groups = []
+    indivs = []
+    errors = []
+    for pdf in pdfs:
+        group, indiv, error = split_pdf(pdf, output_dir, regex_dict=regex_dict)
+        groups += group
+        indivs += indiv
+        errors += error
+        
+    return groups, indivs, errors
 
 def merge_pdfs_by_group(groups, merge_dir):
     merged_pdf_files = []
@@ -298,8 +322,14 @@ if __name__ == "__main__":
 
     logger.info("Extraction des factures...")
     regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "group_name": group_name_pattern, "pdl_name": pdl_pattern}
-    split_pdfs_recursive(data_dir / 'input', output_dir, regex_dict)
-    logger.info("Fin d'extraction des factures\n")
+    group, indiv, errors = split_pdfs(data_dir / 'input', output_dir, regex_dict)
+    logger.info("Fin d'extraction des factures.")
+    logger.info("Factures extraites :")
+    logger.info(f" - {len(group)} groupes")
+    logger.info(f" - {len(indiv)} individuelles")
+    if errors:
+        logger.warning("Erreurs :")
+        logger.warning(errors)
 
 
     logger.info(f"Lecture du fichier Excel 'factures details.xlsx' pour retrouver les regroupement et PDL associés")
