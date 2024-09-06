@@ -157,28 +157,34 @@ def merge_pdfs_by_group(groups, merge_dir):
         df = pd.read_excel(merge_dir / str(group) / f"{group}.xlsx")
         pdls = df["PRM"]
         group = str(group)
-        pdf_files = [filename for filename in (merge_dir / group).iterdir() if filename.suffix == ".pdf"]
+        pdf_files = [f for f in (merge_dir / group).iterdir() if f.suffix == ".pdf"]
+        
+        merger = PdfWriter()
         
         if len(pdf_files) != len(pdls) + 2:
             logger.warning(f"Le nombre de fichiers PDF ({len(pdf_files)}) ne correspond pas au nombre de PDL ({len(pdls)}) pour le groupe {group}.")
 
-        merger = PdfWriter()
-        # ajoute la facture globale en premier
-        for pdf in pdf_files:
-            if normalize(group) in normalize(pdf.name) and not pdf.name.startswith("Table"):
-                # Extraire la date et le nom du fichier
-                filename_parts = pdf.stem.split('-')
-                if len(filename_parts) >= 2:
-                    date = filename_parts[0].strip()
-                    name = filename_parts[1].strip()
-                merger.append(pdf)
-                pdf_files.remove(pdf)
-
-        # ajoute le tableau récapitulatif
-        for pdf in pdf_files:
-            if pdf.name.startswith("Table") and normalize(group) in normalize(pdf.name):
-                merger.append(pdf)
-                pdf_files.remove(pdf)
+        group_pdf = [f for f in pdf_files if normalize(group) in normalize(f.name) and not f.name.startswith("Table") and not re.search(r'\d{14}$', f.stem)]
+        
+        if len(group_pdf)>1:
+            logger.warning(f'Plusieurs factures de groupement ont été trouvées pour {group}!')
+            logger.warning(group_pdf)
+            group_pdf = [group_pdf[1]]
+        
+        if not group_pdf:
+            logger.warning(f"Aucune facture de groupement n'a été trouvées dans le même dossier pour {group}!")
+        else:
+            # ajoute la facture globale en premier
+            merger.append(group_pdf[0])
+            pdf_files.remove(group_pdf[0])
+            filename_parts = group_pdf[0].stem.split('-')
+            if len(filename_parts) >= 2:
+                date = filename_parts[0].strip()
+                name = filename_parts[1].strip()
+            
+        table_pdf = [f for f in pdf_files if f.name.startswith("Table") and normalize(group) in normalize(f.name)]
+        merger.append(table_pdf[0])
+        pdf_files.remove(table_pdf[0])
 
         # Rajoute les factures unitaires dans l'ordre d'apparition du tableau.
         for pdl in pdls:
@@ -306,20 +312,20 @@ if __name__ == "__main__":
     res_dir = data_dir / "output" / "results"
     res_dir.mkdir(exist_ok=True, parents=True)
 
-    logger.info("Extraction des factures...")
-    regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "group_name": group_name_pattern, "pdl_name": pdl_pattern}
-    group, indiv, errors = split_pdfs(data_dir / 'input', output_dir, regex_dict)
-    logger.info("Fin d'extraction des factures.")
-    logger.info("Factures extraites :")
-    logger.info(f" - {len(set(group))} groupes")
-    logger.info(f" - {len(set(indiv))} individuelles")
-    if errors:
-        logger.warning("Erreurs :")
-        logger.warning(errors)
-        errors_csv_path = data_dir / "output" / "errors.csv"
-        df_errors = pd.DataFrame(errors, columns=['error'])
-        df_errors.to_csv(errors_csv_path, index=False)
-        logger.info(f"Les erreurs ont été enregistrées dans {errors_csv_path}")
+    # logger.info("Extraction des factures...")
+    # regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "group_name": group_name_pattern, "pdl_name": pdl_pattern}
+    # group, indiv, errors = split_pdfs(data_dir / 'input', output_dir, regex_dict)
+    # logger.info("Fin d'extraction des factures.")
+    # logger.info("Factures extraites :")
+    # logger.info(f" - {len(set(group))} groupes")
+    # logger.info(f" - {len(set(indiv))} individuelles")
+    # if errors:
+    #     logger.warning("Erreurs :")
+    #     logger.warning(errors)
+    #     errors_csv_path = data_dir / "output" / "errors.csv"
+    #     df_errors = pd.DataFrame(errors, columns=['error'])
+    #     df_errors.to_csv(errors_csv_path, index=False)
+    #     logger.info(f"Les erreurs ont été enregistrées dans {errors_csv_path}")
 
 
     logger.info(f"Lecture du fichier Excel 'lien.xlsx' pour retrouver les regroupement et PDL associés")
