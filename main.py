@@ -70,12 +70,10 @@ def split_pdf(pdf_file_path, output_dir="output_pdfs",  start_keyword="www.enarg
             if writer:
                 # Enregistrer le PDF précédent avant de commencer un nouveau
                 if group_name and date and client_name:
-                    # logger.info(f"Enregistrement du PDF: {date}-{client_name} - {group_name}.pdf")
-                    output_pdf_path = os.path.join(output_dir / 'group', f"{date}-{client_name} - {group_name}.pdf")
+                    output_pdf_path = output_dir / 'group' / f"{date}-{client_name} - {group_name}.pdf"
                     group += [output_pdf_path]
                 elif pdl_name and date and client_name:
-                    # logger.info(f"Enregistrement du PDF: {date}-{client_name} - {pdl_name}.pdf")
-                    output_pdf_path = os.path.join(output_dir / 'indiv', f"{date}-{client_name} - {pdl_name}.pdf")
+                    output_pdf_path = output_dir / 'indiv' / f"{date}-{client_name} - {pdl_name}.pdf"
                     indiv += [output_pdf_path]
                 else:
                     output_pdf_path = None
@@ -116,10 +114,10 @@ def split_pdf(pdf_file_path, output_dir="output_pdfs",  start_keyword="www.enarg
     # Enregistrer le dernier PDF
     if writer:
         if group_name and date and client_name:
-            output_pdf_path = os.path.join(output_dir / 'group', f"{date}-{client_name} - {group_name}.pdf")
+            output_pdf_path = output_dir / 'group' / f"{date}-{client_name} - {group_name}.pdf"
             group += [output_pdf_path]
         elif pdl_name and date and client_name:
-            output_pdf_path = os.path.join(output_dir / 'indiv', f"{date}-{client_name} - {pdl_name}.pdf")
+            output_pdf_path = output_dir / 'indiv' / f"{date}-{client_name} - {pdl_name}.pdf"
             indiv += [output_pdf_path]
         else:
             output_pdf_path = None
@@ -296,18 +294,9 @@ def compress_pdfs(pdf_files, output_dir):
 
 
 if __name__ == "__main__":
-    # En gros : dans le dossier data_dir doivent se trouver : 
-    # - Un dossier input dans lequel il doit y avoir "factures details.xlsx", 
-    # et des dossiers/sous dossiers peu importe avec les .pdf unitaires + les pdf de regroupement
-    # L'arboresence de input et le chemin des pdf importe peu tant que le xslx est à la racine
-    # Chemin du dossier principal contenant les factures unitaires
-    # RENTRER LE NOM DU DOSSIER ICI
-    # data_dir = "~/data/enargia/multisite_legacy/test_data"
-    # data_dir = "~/data/enargia/multisite/bordereau"
-    
-
     parser = argparse.ArgumentParser(description="Définir le répertoire de données")
     parser.add_argument("data_dir", type=str, help="Le chemin du répertoire de données")
+    parser.add_argument("-ec", "--extra_check", action="store_true", help="Vérifie que tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles")
     args = parser.parse_args()
     
     data_dir = args.data_dir
@@ -330,6 +319,10 @@ if __name__ == "__main__":
     if errors:
         logger.warning("Erreurs :")
         logger.warning(errors)
+        errors_csv_path = data_dir / "output" / "errors.csv"
+        df_errors = pd.DataFrame(errors, columns=['error'])
+        df_errors.to_csv(errors_csv_path, index=False)
+        logger.info(f"Les erreurs ont été enregistrées dans {errors_csv_path}")
 
 
     logger.info(f"Lecture du fichier Excel 'lien.xlsx' pour retrouver les regroupement et PDL associés")
@@ -339,6 +332,24 @@ if __name__ == "__main__":
         
     # Lecture des données Excel
     df = pd.read_excel(data_dir / 'input' / "lien.xlsx", sheet_name='Sheet1')
+    
+    
+    if args.extra_check:
+        logger.info("Vérification des PDLs dans 'lien.xlsx' par rapport aux factures individuelles...")
+        pdl_in_lien = set(df["PRM"].astype(str))
+        pdl_in_indiv = set()
+        pdl_pattern = r'(\d{14})'
+        pdl_in_indiv = {re.search(pdl_pattern, pdf_path.stem).group(1) for pdf_path in (output_dir / 'indiv').glob("*.pdf") if re.search(pdl_pattern, pdf_path.stem)}
+        missing_pdls = pdl_in_lien - pdl_in_indiv
+        if missing_pdls:
+            logger.warning(f"Les PDLs suivants sont manquants dans les factures individuelles: {missing_pdls}")
+            missing_pdls_file = data_dir / "output" / "missing_pdls.csv"
+            df_missing_pdls = df[df["PRM"].astype(str).isin(missing_pdls)]
+            df_missing_pdls.to_csv(missing_pdls_file, index=False)
+            logger.info(f"Les PDLs manquants ont été enregistrés dans {missing_pdls_file}")
+        else:
+            logger.info("Tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles.")
+    
     groups = df.groupby("groupement").filter(lambda x: len(x)>=1)["groupement"].unique()
 
     if "nan" in groups:
