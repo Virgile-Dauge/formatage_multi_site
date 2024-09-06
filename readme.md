@@ -38,7 +38,9 @@ Ce programme permet de défusionner, réorganiser, et refusionner des documents 
         ├── merge
         │   ├── GROUPEMENT1
         │   └── GROUPEMENT2
-        └── results
+        ├── results
+        ├── errors.csv
+        └── missing_pdl.csv (avec l'option -ec uniquement)
     ```
     - Les factures de groupement consolidées (synthèse + tableau + factures individuelles) sont générés dans le sous-dossier `results/`
     - Le programme crée également un dossier `extract/` dans lequel sont extraites toutes les factures , 
@@ -57,9 +59,9 @@ Tous les dossier d'entrée seront scannés à la recherche de pdf.
 Tous les pdfs trouvés seront analysés pour en extraire les factures individuelles. Une facture est identifiées comme individuelle si elle matche le pattern suivant `r'Référence PDL : (\d{14})'´ autrement dit que l'on trouve bien dérrière _Référence PDL_ un pdl valide. (valide au sens qu'il est composé de 14 digits).
 
  1) Placer les dossiers d'entrées dans `data_dir/input`, pas besoin de `lien.xlsx`
- 2) Exectution du script : 
+ 2) Exectution du script [optionnel : option -ec qui vérifie qu'il ne manque pas de pdls, dans ce cas on a besoin du `lien.xlsx`]: 
      ```
-    python3 main.py data_dir
+    python3 main.py data_dir -ec
     ```
  3) Récupération des factures individuelles dans `data_dir/output/extract/indiv`
 
