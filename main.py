@@ -28,6 +28,20 @@ group_name_pattern = r'Regroupement de facturation\s*:\s*\((.*?)\)'
 group_name_pattern = r'Regroupement de facturation\s*:\s*\(([\s\S]*?)\)'
 pdl_pattern = r'Référence PDL : (\d{14})'
 
+def copy_pdf(source : Path, dest: Path):
+
+    source.mkdir(exist_ok=True, parents=True)
+    factures_unitaires = list(source.glob('*.pdf'))
+
+    dest.mkdir(exist_ok=True, parents=True)
+    factures_dest = set(dest.glob('*.pdf'))
+
+    to_copy = [f for f in factures_unitaires if f not in factures_dest]
+    if to_copy:
+        logger.info(f"Copie de {len(to_copy)} factures indiv depuis : {source_unitaires_dir}")
+        for file in to_copy:
+            shutil.copy(file, dest / file.name)
+    
 def safe_extract_text(page):
     try:
         return page.extract_text()
@@ -302,27 +316,39 @@ if __name__ == "__main__":
     parser.add_argument("-ec", "--extra_check", action="store_true", help="Vérifie que tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles")
     args = parser.parse_args()
     
+    # définition de l'arborescence
     data_dir = args.data_dir
 
     data_dir = Path(data_dir).expanduser()
-    output_dir = data_dir / "output" / "extract"
-    output_dir.mkdir(exist_ok=True, parents=True)
-    merge_dir = data_dir / "output" / "merge"
+    
+    source_unitaires_dir = data_dir.parent / 'source_unitaires'
+    
+    input_dir = data_dir / 'input'
+    output_dir = data_dir / 'output' 
+    
+    extract_dir = output_dir / 'extract'
+    indiv_dir = extract_dir / 'indiv'
+    group_dir = extract_dir / 'group'
+    
+    merge_dir = output_dir / 'merge'
+    
+    res_dir = output_dir / 'results'
+    
+    indiv_dir.mkdir(exist_ok=True, parents=True)
+    group_dir.mkdir(exist_ok=True, parents=True)
     merge_dir.mkdir(exist_ok=True, parents=True)
-    res_dir = data_dir / "output" / "results"
     res_dir.mkdir(exist_ok=True, parents=True)
 
     # Raccourcis, si les données unitaires ont déjà été extraites, 
     # on les copie plutot que de les traiter à nouveau 
     # (Du coup faut pas les mettre dans input)
-    source_unitaires_dir = data_dir.parent / 'source_unitaires'
-    source_unitaires_dir.mkdir(exist_ok=True, parents=True)
-    for file in source_unitaires_dir.glob('*.pdf'):
-        shutil.copy(file, output_dir / 'indiv')
+    
+    copy_pdf(source_unitaires_dir, indiv_dir)
+
     
     logger.info("Extraction des factures...")
     regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "group_name": group_name_pattern, "pdl_name": pdl_pattern}
-    group, indiv, errors = split_pdfs(data_dir / 'input', output_dir, regex_dict)
+    group, indiv, errors = split_pdfs(input_dir, output_dir, regex_dict)
     logger.info("Fin d'extraction des factures.")
     logger.info("Factures extraites :")
     logger.info(f" - {len(set(group))} groupes")
@@ -330,7 +356,7 @@ if __name__ == "__main__":
     if errors:
         logger.warning("Erreurs :")
         logger.warning(errors)
-        errors_csv_path = data_dir / "output" / "errors.csv"
+        errors_csv_path = output_dir / "errors.csv"
         df_errors = pd.DataFrame(errors, columns=['error'])
         df_errors.to_csv(errors_csv_path, index=False)
         logger.info(f"Les erreurs ont été enregistrées dans {errors_csv_path}")
@@ -339,7 +365,7 @@ if __name__ == "__main__":
     # en y copiant les nouvelles factures unitaires
     for file in (output_dir / 'indiv').glob('*.pdf'):
         if not (source_unitaires_dir / file.name).exists():
-            shutil.copy(file, source_unitaires_dir)
+            shutil.copy(file, source_unitaires_dir / file.name)
 
     logger.info(f"Lecture du fichier Excel 'lien.xlsx' pour retrouver les regroupement et PDL associés")
     if not (data_dir / 'input' / "lien.xlsx").exists():
