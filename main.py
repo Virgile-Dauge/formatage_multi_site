@@ -342,7 +342,6 @@ if __name__ == "__main__":
     # Raccourcis, si les données unitaires ont déjà été extraites, 
     # on les copie plutot que de les traiter à nouveau 
     # (Du coup faut pas les mettre dans input)
-    
     copy_pdf(source_unitaires_dir, indiv_dir)
 
     
@@ -363,9 +362,9 @@ if __name__ == "__main__":
 
     # On consolide le dossier des factures unitaires 
     # en y copiant les nouvelles factures unitaires
-    for file in (output_dir / 'indiv').glob('*.pdf'):
-        if not (source_unitaires_dir / file.name).exists():
-            shutil.copy(file, source_unitaires_dir / file.name)
+    # for file in (output_dir / 'indiv').glob('*.pdf'):
+    #     if not (source_unitaires_dir / file.name).exists():
+    #         shutil.copy(file, source_unitaires_dir / file.name)
 
     logger.info(f"Lecture du fichier Excel 'lien.xlsx' pour retrouver les regroupement et PDL associés")
     if not (data_dir / 'input' / "lien.xlsx").exists():
@@ -401,9 +400,9 @@ if __name__ == "__main__":
     global_bills_dir = output_dir / "group"
     found_groups = set([group_name_from_filename(f) for f in global_bills_dir.glob("*.pdf")])
 
-    logger.info(found_groups)
+    # logger.info(found_groups)
     groups = [group for group in groups if group in found_groups]
-    logger.info(groups)
+    # logger.info(groups)
     logger.info("Tri des fichiers Excel défusionnés \n")
     sort_xls_by_group(df, groups, merge_dir)
 
@@ -411,7 +410,7 @@ if __name__ == "__main__":
     export_tables_as_pdf(groups, merge_dir)
 
     logger.info("Tri des fichiers PDF défusionnés \n")
-    sort_pdfs_by_group(df, groups, output_dir / 'indiv', output_dir / 'group', merge_dir)
+    sort_pdfs_by_group(df, groups, source_unitaires_dir, group_dir, merge_dir)
 
     logger.info("Fusion des PDF par groupement")
     merged_pdf_files = merge_pdfs_by_group(groups, merge_dir)
