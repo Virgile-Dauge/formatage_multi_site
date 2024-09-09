@@ -312,21 +312,34 @@ if __name__ == "__main__":
     res_dir = data_dir / "output" / "results"
     res_dir.mkdir(exist_ok=True, parents=True)
 
-    # logger.info("Extraction des factures...")
-    # regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "group_name": group_name_pattern, "pdl_name": pdl_pattern}
-    # group, indiv, errors = split_pdfs(data_dir / 'input', output_dir, regex_dict)
-    # logger.info("Fin d'extraction des factures.")
-    # logger.info("Factures extraites :")
-    # logger.info(f" - {len(set(group))} groupes")
-    # logger.info(f" - {len(set(indiv))} individuelles")
-    # if errors:
-    #     logger.warning("Erreurs :")
-    #     logger.warning(errors)
-    #     errors_csv_path = data_dir / "output" / "errors.csv"
-    #     df_errors = pd.DataFrame(errors, columns=['error'])
-    #     df_errors.to_csv(errors_csv_path, index=False)
-    #     logger.info(f"Les erreurs ont été enregistrées dans {errors_csv_path}")
+    # Raccourcis, si les données unitaires ont déjà été extraites, 
+    # on les copie plutot que de les traiter à nouveau 
+    # (Du coup faut pas les mettre dans input)
+    source_unitaires_dir = data_dir.parent / 'source_unitaires'
+    source_unitaires_dir.mkdir(exist_ok=True, parents=True)
+    for file in source_unitaires_dir.glob('*.pdf'):
+        shutil.copy(file, output_dir / 'indiv')
+    
+    logger.info("Extraction des factures...")
+    regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "group_name": group_name_pattern, "pdl_name": pdl_pattern}
+    group, indiv, errors = split_pdfs(data_dir / 'input', output_dir, regex_dict)
+    logger.info("Fin d'extraction des factures.")
+    logger.info("Factures extraites :")
+    logger.info(f" - {len(set(group))} groupes")
+    logger.info(f" - {len(set(indiv))} individuelles")
+    if errors:
+        logger.warning("Erreurs :")
+        logger.warning(errors)
+        errors_csv_path = data_dir / "output" / "errors.csv"
+        df_errors = pd.DataFrame(errors, columns=['error'])
+        df_errors.to_csv(errors_csv_path, index=False)
+        logger.info(f"Les erreurs ont été enregistrées dans {errors_csv_path}")
 
+    # On consolide le dossier des factures unitaires 
+    # en y copiant les nouvelles factures unitaires
+    for file in (output_dir / 'indiv').glob('*.pdf'):
+        if not (source_unitaires_dir / file.name).exists():
+            shutil.copy(file, source_unitaires_dir)
 
     logger.info(f"Lecture du fichier Excel 'lien.xlsx' pour retrouver les regroupement et PDL associés")
     if not (data_dir / 'input' / "lien.xlsx").exists():
