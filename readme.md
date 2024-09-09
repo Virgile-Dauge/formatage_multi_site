@@ -18,29 +18,31 @@ Ce programme permet de défusionner, réorganiser, et refusionner des documents 
 2. **Exécution**:
     - Exécutez le programme avec la commande suivante :
     ```
-    python3 main.py <chemin_du_dossier_de_données>
+    python3 main.py <chemin_du_dossier_de_données data_dir>
     ```
 
 3. **Résultats**:
 
     Voici l'architecture des résultats après exécution du programme:
     ```
-    data_dir/
-    ├── input
-    │   ├── dossiers_imbriques
-    │   ├── dossiers_imbriques_en_rab
-    │   ├── dossiers_peu_importe
-    │   └── lien.xslx
-    └── output
-        ├── extract
-        │   ├── group
-        │   └── indiv
-        ├── merge
-        │   ├── GROUPEMENT1
-        │   └── GROUPEMENT2
-        ├── results
-        ├── errors.csv
-        └── missing_pdl.csv (avec l'option -ec uniquement)
+    workspace/
+    ├── source_unitaires
+    └── data_dir
+        ├── input
+        │   ├── dossiers_imbriques
+        │   ├── dossiers_imbriques_en_rab
+        │   ├── dossiers_peu_importe
+        │   └── lien.xslx
+        └── output
+            ├── extract
+            │   ├── group
+            │   └── indiv
+            ├── merge
+            │   ├── GROUPEMENT1
+            │   └── GROUPEMENT2
+            ├── results
+            ├── errors.csv
+            └── missing_pdl.csv (avec l'option -ec uniquement)
     ```
     - Les factures de groupement consolidées (synthèse + tableau + factures individuelles) sont générés dans le sous-dossier `results/`
     - Le programme crée également un dossier `extract/` dans lequel sont extraites toutes les factures , 
