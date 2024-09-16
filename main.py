@@ -366,12 +366,8 @@ if __name__ == "__main__":
     group_dir.mkdir(exist_ok=True, parents=True)
     merge_dir.mkdir(exist_ok=True, parents=True)
     res_dir.mkdir(exist_ok=True, parents=True)
-
-    # Raccourcis, si les données unitaires ont déjà été extraites, 
-    # on les copie plutot que de les traiter à nouveau 
-    # (Du coup faut pas les mettre dans input)
-    # copy_pdf(source_unitaires_dir, indiv_dir)
-
+    
+    source_unitaires_dir.mkdir(exist_ok=True, parents=True)
     
     logger.info("Extraction des factures...")
     # regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "group_name": group_name_pattern, "pdl_name": pdl_pattern}
@@ -391,9 +387,9 @@ if __name__ == "__main__":
 
     # On consolide le dossier des factures unitaires 
     # en y copiant les nouvelles factures unitaires
-    # for file in (output_dir / 'indiv').glob('*.pdf'):
-    #     if not (source_unitaires_dir / file.name).exists():
-    #         shutil.copy(file, source_unitaires_dir / file.name)
+    for file in indiv_dir.glob('*.pdf'):
+        if not (source_unitaires_dir / file.name).exists():
+            shutil.copy(file, source_unitaires_dir / file.name)
 
     logger.info(f"Lecture du fichier Excel 'lien.xlsx' pour retrouver les regroupement et PDL associés")
     if not (data_dir / 'input' / "lien.xlsx").exists():
