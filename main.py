@@ -95,7 +95,6 @@ def split_pdf(pdf_file_path, output_dir="output_pdfs",  start_keyword="www.enarg
     for i in range(num_pages):
         page = reader.pages[i]
         text = safe_extract_text(page)
-        pprint(text)
         if text is None:
             logger.error(f"Impossible d'extraire le texte de la page {i} de {pdf_file_path} Arrêt de l'exécution.")
             return group, indiv, [pdf_file_path]
@@ -125,7 +124,6 @@ def split_pdf(pdf_file_path, output_dir="output_pdfs",  start_keyword="www.enarg
 
             # Extraire la date
             date_match = re.search(date_pattern, text)
-            print(date_match)
             if date_match:
                 date = f"{date_match.group(3)}{date_match.group(2)}{date_match.group(1)}"#.replace("\n", " ")
 
