@@ -1,3 +1,4 @@
+import os
 import re
 import logging
 from pypdf import PdfReader, PdfWriter
@@ -194,7 +195,7 @@ def merge_pdfs_by_group(groups, merge_dir):
         df = pd.read_excel(merge_dir / str(group) / f"{group}.xlsx")
         pdls = df["PRM"]
         group = str(group)
-        pdf_files = [f for f in (merge_dir / group).iterdir() if f.suffix == ".pdf"]
+        pdf_files = [f.resolve() for f in (merge_dir / group).iterdir() if f.suffix == ".pdf"]
         
         merger = PdfWriter()
         
@@ -248,7 +249,7 @@ def merge_pdfs_by_group(groups, merge_dir):
 def group_name_from_filename(filename: str) -> str:
     return ' - '.join(filename.stem.replace(' - ', '-').split('-')[2:])
 
-def sort_pdfs_by_group(df, groups, pdl_dir, group_dir, merge_dir):
+def sort_pdfs_by_group(df, pdl_dir, group_dir, merge_dir, symlink: bool=False):
     uncopied = []
     for pdf_file in pdl_dir.glob('*.pdf'):
         # Extraire le PDL à partir du nom de fichier (ex: _123456789.pdf)
@@ -269,15 +270,16 @@ def sort_pdfs_by_group(df, groups, pdl_dir, group_dir, merge_dir):
             #destination_dir.mkdir(parents=True, exist_ok=True)
             if destination_dir.exists():
                 # Copier le fichier PDF dans le bon dossier
-                shutil.copy(pdf_file, destination_dir / pdf_file.name)
+                # shutil.copy(pdf_file, destination_dir / pdf_file.name)
+                if symlink:
+                    os.symlink(pdf_file, destination_dir / pdf_file.name)
+                else :
+                    shutil.copy(pdf_file, destination_dir / pdf_file.name)
         else:
             uncopied += [pdf_file]
       
     for pdf_file in group_dir.glob('*.pdf'):
         # Extraire le nom du groupe à partir du nom de fichier
-        # Supposons que le format du fichier est du type 'date-EPIC_HABITAT_REGION - GROUP - MORE_GROUP_INFO.pdf'
-        # On veut extraire le groupe entre les deux tirets dans le nom du fichier.
-        
         group_name = group_name_from_filename(pdf_file)
 
         # Définir le chemin du dossier de destination basé sur le groupe
@@ -371,7 +373,7 @@ if __name__ == "__main__":
     # Raccourcis, si les données unitaires ont déjà été extraites, 
     # on les copie plutot que de les traiter à nouveau 
     # (Du coup faut pas les mettre dans input)
-    copy_pdf(source_unitaires_dir, indiv_dir)
+    # copy_pdf(source_unitaires_dir, indiv_dir)
 
     
     logger.info("Extraction des factures...")
@@ -440,7 +442,7 @@ if __name__ == "__main__":
     export_tables_as_pdf(groups, merge_dir)
 
     logger.info("Tri des fichiers PDF défusionnés \n")
-    sort_pdfs_by_group(df, groups, source_unitaires_dir, group_dir, merge_dir)
+    sort_pdfs_by_group(df, source_unitaires_dir, group_dir, merge_dir)
 
     logger.info("Fusion des PDF par groupement")
     merged_pdf_files = merge_pdfs_by_group(groups, merge_dir)
