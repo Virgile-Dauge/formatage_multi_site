@@ -72,7 +72,7 @@ def safe_extract_text(page):
         print(f"Error extracting text from page: {e}")
         return None
 
-def split_pdf(pdf_file_path, output_dir="output_pdfs",  start_keyword="www.enargia.eus", regex_dict=None) -> tuple[list[Path], list[Path], Path]:
+def split_pdf(pdf_file_path : Path, output_dir : Path,  start_keyword : str="www.enargia.eus", regex_dict=None) -> tuple[list[Path], list[Path], Path]:
     indiv = []
     group = []
     # Ouvrir le fichier PDF
@@ -82,7 +82,7 @@ def split_pdf(pdf_file_path, output_dir="output_pdfs",  start_keyword="www.enarg
     except EmptyFileError as e:
         logger.error(f"Erreur : {e} '{pdf_file_path}'")
         return group, indiv, [pdf_file_path]
-    #reader = PdfReader(pdf_file_path)
+    
     num_pages = len(reader.pages)
     writer = None
 
@@ -134,10 +134,7 @@ def split_pdf(pdf_file_path, output_dir="output_pdfs",  start_keyword="www.enarg
                 client_name = client_name_match.group(1).strip().replace(" ", "_")  # Remplace les espaces par "_"
 
             # Extraire le nom du groupement
-            #group_name_match = re.search(group_name_pattern, text, re.DOTALL)
             group_name = extract_group_name(text)
-            # if group_name_match:
-            #     group_name = group_name_match.group(1).strip().replace("\n"," ")
 
             pdl_match = re.search(pdl_pattern, text)
             if pdl_match:
