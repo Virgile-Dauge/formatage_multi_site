@@ -11,6 +11,7 @@ import shutil
 
 from mpl import export_table_as_pdf
 from rich.logging import RichHandler
+from rich.pretty import pprint
 
 # Configuration du logger pour utiliser Rich
 logging.basicConfig(
@@ -22,11 +23,32 @@ logging.basicConfig(
 logger = logging.getLogger()
 
 # Regex patterns pour extraire les informations
-date_pattern = r'VOTRE FACTURE DU (\d{2})\/(\d{2})\/(\d{4})'
+date_pattern = r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})'
 client_name_pattern = r'Nom et Prénom ou\s* Raison Sociale :\s*(.*)'
-group_name_pattern = r'Regroupement de facturation\s*:\s*\((.*?)\)'
-group_name_pattern = r'Regroupement de facturation\s*:\s*\(([\s\S]*?)\)'
+
 pdl_pattern = r'Référence PDL : (\d{14})'
+
+def extract_group_name(text):
+    # Regex pour trouver le début de la parenthèse
+    pattern = r'Regroupement de facturation\s*:\s*\('
+    match = re.search(pattern, text)
+    
+    if match:
+        start = match.end()  # Fin du match pour le début de la parenthèse
+        parentheses_count = 1
+        end = start
+        
+        # On parcourt la chaîne à partir de la première parenthèse pour trouver la fermeture correspondante
+        while parentheses_count > 0 and end < len(text):
+            if text[end] == '(':
+                parentheses_count += 1
+            elif text[end] == ')':
+                parentheses_count -= 1
+            end += 1
+        
+        # Retourner le contenu à l'intérieur des parenthèses imbriquées
+        return text[start:end-1].strip().replace('\n', ' ')
+    return None
 
 def copy_pdf(source : Path, dest: Path):
 
@@ -73,6 +95,7 @@ def split_pdf(pdf_file_path, output_dir="output_pdfs",  start_keyword="www.enarg
     for i in range(num_pages):
         page = reader.pages[i]
         text = safe_extract_text(page)
+        pprint(text)
         if text is None:
             logger.error(f"Impossible d'extraire le texte de la page {i} de {pdf_file_path} Arrêt de l'exécution.")
             return group, indiv, [pdf_file_path]
@@ -102,6 +125,7 @@ def split_pdf(pdf_file_path, output_dir="output_pdfs",  start_keyword="www.enarg
 
             # Extraire la date
             date_match = re.search(date_pattern, text)
+            print(date_match)
             if date_match:
                 date = f"{date_match.group(3)}{date_match.group(2)}{date_match.group(1)}"#.replace("\n", " ")
 
@@ -111,9 +135,10 @@ def split_pdf(pdf_file_path, output_dir="output_pdfs",  start_keyword="www.enarg
                 client_name = client_name_match.group(1).strip().replace(" ", "_")  # Remplace les espaces par "_"
 
             # Extraire le nom du groupement
-            group_name_match = re.search(group_name_pattern, text, re.DOTALL)
-            if group_name_match:
-                group_name = group_name_match.group(1).strip().replace("\n"," ")
+            #group_name_match = re.search(group_name_pattern, text, re.DOTALL)
+            group_name = extract_group_name(text)
+            # if group_name_match:
+            #     group_name = group_name_match.group(1).strip().replace("\n"," ")
 
             pdl_match = re.search(pdl_pattern, text)
             if pdl_match:
@@ -177,7 +202,13 @@ def merge_pdfs_by_group(groups, merge_dir):
         
         if len(pdf_files) != len(pdls) + 2:
             logger.warning(f"Le nombre de fichiers PDF ({len(pdf_files)}) ne correspond pas au nombre de PDL ({len(pdls)}) pour le groupe {group}.")
-
+        # Identifier les PDLs manquants
+        pdf_pdls = [re.search(r'(\d{14})', pdf.stem).group(1) for pdf in pdf_files if re.search(r'(\d{14})', pdf.stem)]
+        pdf_pdls = [pdl for pdl in pdf_pdls if pdl is not None]
+        missing_pdls = set(pdls.astype(str)) - set(pdf_pdls)
+        
+        if missing_pdls:
+            logger.warning(f"Les PDLs suivants sont manquants dans les fichiers PDF: {missing_pdls}")
         group_pdf = [f for f in pdf_files if normalize(group) in normalize(f.name) and not f.name.startswith("Table") and not re.search(r'\d{14}$', f.stem)]
         
         if len(group_pdf)>1:
@@ -221,7 +252,6 @@ def group_name_from_filename(filename: str) -> str:
 
 def sort_pdfs_by_group(df, groups, pdl_dir, group_dir, merge_dir):
     uncopied = []
-    # print(list(filenames))
     for pdf_file in pdl_dir.glob('*.pdf'):
         # Extraire le PDL à partir du nom de fichier (ex: _123456789.pdf)
         # On suppose que le numéro PDL est avant l'extension du fichier
@@ -238,13 +268,13 @@ def sort_pdfs_by_group(df, groups, pdl_dir, group_dir, merge_dir):
             destination_dir = merge_dir / groupement_dir
             
             # Créer le dossier de destination s'il n'existe pas
-            destination_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Copier le fichier PDF dans le bon dossier
-            shutil.copy(pdf_file, destination_dir / pdf_file.name)
+            #destination_dir.mkdir(parents=True, exist_ok=True)
+            if destination_dir.exists():
+                # Copier le fichier PDF dans le bon dossier
+                shutil.copy(pdf_file, destination_dir / pdf_file.name)
         else:
             uncopied += [pdf_file]
-        
+      
     for pdf_file in group_dir.glob('*.pdf'):
         # Extraire le nom du groupe à partir du nom de fichier
         # Supposons que le format du fichier est du type 'date-EPIC_HABITAT_REGION - GROUP - MORE_GROUP_INFO.pdf'
@@ -260,8 +290,9 @@ def sort_pdfs_by_group(df, groups, pdl_dir, group_dir, merge_dir):
         else:
             # Copier le fichier PDF dans le bon dossier
             shutil.copy(pdf_file, destination_dir / pdf_file.name)
+
     if uncopied:   
-        logger.warn(f'Uncopied files : {uncopied}')
+        logger.warning(f'Uncopied files : {uncopied}')
 
 def sort_xls_by_group(df, groups, merge_dir=None):
     """
@@ -346,8 +377,9 @@ if __name__ == "__main__":
 
     
     logger.info("Extraction des factures...")
-    regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "group_name": group_name_pattern, "pdl_name": pdl_pattern}
-    group, indiv, errors = split_pdfs(input_dir, output_dir, regex_dict)
+    # regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "group_name": group_name_pattern, "pdl_name": pdl_pattern}
+    regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "pdl_name": pdl_pattern}
+    group, indiv, errors = split_pdfs(input_dir, extract_dir, regex_dict)
     logger.info("Fin d'extraction des factures.")
     logger.info("Factures extraites :")
     logger.info(f" - {len(set(group))} groupes")
@@ -374,6 +406,8 @@ if __name__ == "__main__":
     # Lecture des données Excel
     df = pd.read_excel(data_dir / 'input' / "lien.xlsx", sheet_name='Sheet1')
     
+    # Remplacer les tirets moyens par des tirets courts
+    df = df.replace('–', '-', regex=True)
     
     if args.extra_check:
         logger.info("Vérification des PDLs dans 'lien.xlsx' par rapport aux factures individuelles...")
@@ -395,14 +429,12 @@ if __name__ == "__main__":
 
     if "nan" in groups:
         groups = groups.remove("nan")
-
+    
     # Filtrer les groupes pour n'avoir que ceux trouvés dans les factures de regroupement
-    global_bills_dir = output_dir / "group"
-    found_groups = set([group_name_from_filename(f) for f in global_bills_dir.glob("*.pdf")])
-
-    # logger.info(found_groups)
+    found_groups = set([group_name_from_filename(f) for f in group_dir.glob("*.pdf")])
+    
     groups = [group for group in groups if group in found_groups]
-    # logger.info(groups)
+    logger.info(groups)
     logger.info("Tri des fichiers Excel défusionnés \n")
     sort_xls_by_group(df, groups, merge_dir)
 
