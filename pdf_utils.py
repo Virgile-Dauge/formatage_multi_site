@@ -1,4 +1,3 @@
-from pypdf import PdfReader, PdfWriter
 from pathlib import Path
 import io
 import fitz  # PyMuPDF
@@ -138,40 +137,6 @@ def remplacer_texte_pdf(fichier_entree, fichier_sortie, ancien_texte, nouveau_te
     doc.save(fichier_sortie)
     doc.close()
     
-def remplacer_texte_pdf_pypdf(pdf_path, texte_a_remplacer, nouveau_texte, output_path):
-    try:
-        # Vérifier si le fichier PDF existe
-        if not Path(pdf_path).is_file():
-            raise FileNotFoundError(f"Le fichier PDF '{pdf_path}' n'existe pas.")
-        # Ouvrir le document PDF
-        reader = PdfReader(pdf_path)
-        writer = PdfWriter()
-        
-        # Parcourir chaque page du document
-        for page_num in range(len(reader.pages)):
-            page = reader.pages[page_num]
-            text = page.extract_text()
-            
-            # Remplacer le texte
-            if texte_a_remplacer in text:
-                text = text.replace(texte_a_remplacer, nouveau_texte)
-                
-                # Créer une nouvelle page avec le texte modifié
-                writer.add_page(page)
-                writer.pages[page_num].merge_page(PdfReader(io.BytesIO(text.encode('utf-8'))))
-            else:
-                writer.add_page(page)
-        
-        # Sauvegarder le document modifié
-        with open(output_path, "wb") as output_pdf:
-            writer.write(output_pdf)
-        
-        print(f"Le texte '{texte_a_remplacer}' a été remplacé par '{nouveau_texte}' dans le fichier '{output_path}'")
-    except Exception as e:
-        print(f"Erreur lors du traitement du fichier PDF: {e}")
-
-# Exemple d'utilisation
-# remplacer_texte_pdf("chemin/vers/votre_fichier.pdf", "texte_a_remplacer", "nouveau_texte", "chemin/vers/fichier_modifie.pdf")
 
 if __name__ == "__main__":
     import argparse
