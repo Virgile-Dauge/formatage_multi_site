@@ -6,6 +6,7 @@ from pypdf.errors import EmptyFileError
 import argparse
 from pathlib import Path
 import pandas as pd
+from pandas import DataFrame
 import sys
 import fitz
 import shutil
@@ -322,10 +323,14 @@ def sort_xls_by_group(df, groups, merge_dir=None):
         # Enregistrer les données triées dans un fichier Excel
         df_groupement.to_excel(group_dir / f"{group}.xlsx", index=False)
 
-def export_tables_as_pdf(groups, merge_dir):
+def export_tables_as_pdf(groups : list[str], merge_dir : Path):
     for group in groups:
         group_dir = merge_dir / str(group)
         df_g = pd.read_excel(group_dir / f"{group}.xlsx")
+        # On enleve la colonne 'membre' pour l'export
+        if 'membre' in df_g.columns:
+            df_g = df_g.drop('membre', axis=1)
+
         export_table_as_pdf(df_g, group_dir / f"Table_{group}.pdf")
 
 def normalize(string):
@@ -337,6 +342,24 @@ def compress_pdfs(pdf_files, output_dir):
         if not doc.page_count == 0:
             doc.save(output_dir / pdf_file.name, garbage=4, deflate=True)
             doc.close()
+
+def check_missing_pdl(df : DataFrame, pdl_dir: Path) -> set[str]:
+    logger.info("Vérification des PDLs dans 'lien.xlsx' par rapport aux factures individuelles...")
+    pdl_in_lien = set(df["PRM"].astype(str))
+    pdl_in_sources = set()
+    pdl_pattern = r'(\d{14})'
+    pdl_in_sources = {re.search(pdl_pattern, pdf_path.stem).group(1) for pdf_path in pdl_dir.glob("*.pdf") if re.search(pdl_pattern, pdf_path.stem)}
+    missing_pdls = pdl_in_lien - pdl_in_sources
+    if missing_pdls:
+        logger.warning(f"Les PDLs suivants sont manquants dans les factures individuelles: {missing_pdls}")
+        missing_pdls_file = data_dir / "output" / "missing_pdls.csv"
+        df_missing_pdls = df[df["PRM"].astype(str).isin(missing_pdls)]
+        df_missing_pdls.to_csv(missing_pdls_file, index=False)
+        logger.info(f"Les PDLs manquants ont été enregistrés dans {missing_pdls_file}")
+        
+    else:
+        logger.info("Tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles.")
+    return missing_pdls
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Définir le répertoire de données")
@@ -373,10 +396,9 @@ if __name__ == "__main__":
     # regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "group_name": group_name_pattern, "pdl_name": pdl_pattern}
     regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "pdl_name": pdl_pattern}
     group, indiv, errors = split_pdfs(input_dir, extract_dir, regex_dict)
-    logger.info("Fin d'extraction des factures.")
-    logger.info("Factures extraites :")
-    logger.info(f" - {len(set(group))} groupes")
-    logger.info(f" - {len(set(indiv))} individuelles")
+    logger.info("└── Factures extraites :")
+    logger.info(f"     - {len(set(group))} groupes")
+    logger.info(f"     - {len(set(indiv))} individuelles")
     if errors:
         logger.warning("Erreurs :")
         logger.warning(errors)
@@ -403,22 +425,13 @@ if __name__ == "__main__":
     df = df.replace('–', '-', regex=True)
     
     if args.extra_check:
-        logger.info("Vérification des PDLs dans 'lien.xlsx' par rapport aux factures individuelles...")
-        pdl_in_lien = set(df["PRM"].astype(str))
-        pdl_in_indiv = set()
-        pdl_pattern = r'(\d{14})'
-        pdl_in_indiv = {re.search(pdl_pattern, pdf_path.stem).group(1) for pdf_path in (output_dir / 'indiv').glob("*.pdf") if re.search(pdl_pattern, pdf_path.stem)}
-        missing_pdls = pdl_in_lien - pdl_in_indiv
-        if missing_pdls:
-            logger.warning(f"Les PDLs suivants sont manquants dans les factures individuelles: {missing_pdls}")
-            missing_pdls_file = data_dir / "output" / "missing_pdls.csv"
-            df_missing_pdls = df[df["PRM"].astype(str).isin(missing_pdls)]
-            df_missing_pdls.to_csv(missing_pdls_file, index=False)
-            logger.info(f"Les PDLs manquants ont été enregistrés dans {missing_pdls_file}")
-        else:
-            logger.info("Tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles.")
+        check_missing_pdl(df, source_unitaires_dir)
     
-    groups = df.groupby("groupement").filter(lambda x: len(x)>=1)["groupement"].unique()
+    # Détecter les groupes qui n'ont qu'une seule ligne dans df
+    single_line_groups = df.groupby("groupement").filter(lambda x: len(x) == 1)["groupement"].unique()
+    
+    
+    groups = df.groupby("groupement").filter(lambda x: len(x)>1)["groupement"].unique()
 
     if "nan" in groups:
         groups = groups.remove("nan")
@@ -426,7 +439,10 @@ if __name__ == "__main__":
     # Filtrer les groupes pour n'avoir que ceux trouvés dans les factures de regroupement
     found_groups = set([group_name_from_filename(f) for f in group_dir.glob("*.pdf")])
     
-    groups = [group for group in groups if group in found_groups]
+    single_line_groups = [g for g in single_line_groups if g in found_groups]
+    logger.info(f"Groupes avec une seule ligne : {single_line_groups}")
+    groups = [g for g in groups if g in found_groups]
+    
     logger.info(groups)
     logger.info("Tri des fichiers Excel défusionnés \n")
     sort_xls_by_group(df, groups, merge_dir)
@@ -439,7 +455,7 @@ if __name__ == "__main__":
 
     logger.info("Fusion des PDF par groupement")
     merged_pdf_files = merge_pdfs_by_group(groups, merge_dir)
-    logger.info("Fin de la fusion")
+    logger.info("└── Fin de la fusion")
 
     logger.info("Reduce PDF size")
     compress_pdfs(merged_pdf_files, res_dir)
