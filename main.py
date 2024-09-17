@@ -3,7 +3,6 @@ import re
 import logging
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import EmptyFileError
-# from pypdf.annotations import PageObject
 from pypdf import PageObject
 import argparse
 from pathlib import Path
@@ -14,8 +13,8 @@ import shutil
 import fitz
 
 from pdf_utils import ajouter_ligne_regroupement
-
 from mpl import export_table_as_pdf
+
 from rich.logging import RichHandler
 from rich.pretty import pprint
 
@@ -31,10 +30,9 @@ logger = logging.getLogger()
 # Regex patterns pour extraire les informations
 date_pattern = r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})'
 client_name_pattern = r'Nom et Prénom ou\s* Raison Sociale :\s*(.*)'
-
 pdl_pattern = r'Référence PDL : (\d{14})'
 
-def extract_group_name(text):
+def extract_group_name(text: str) -> str | None:
     """
     Extrait le nom du groupe à partir d'un texte donné en recherchant une expression spécifique.
 
@@ -68,7 +66,7 @@ def extract_group_name(text):
         return text[start:end-1].strip().replace('\n', ' ')
     return None
 
-def copy_pdf(source : Path, dest: Path):
+def copy_pdf(source: Path, dest: Path):
     """
     Copie les fichiers PDF d'un répertoire source vers un répertoire de destination.
 
@@ -112,7 +110,7 @@ def safe_extract_text(page: PageObject) -> str | None:
         logger.error(f"Erreur lors de l'extraction du texte de la page : {e}")
         return None
 
-def split_pdf(pdf_file_path : Path, output_dir : Path,  start_keyword : str="www.enargia.eus", regex_dict=None) -> tuple[list[Path], list[Path], Path]:
+def split_pdf(pdf_file_path: Path, output_dir: Path,  start_keyword: str="www.enargia.eus", regex_dict=None) -> tuple[list[Path], list[Path], Path]:
     """
     Divise un fichier PDF en plusieurs sous-PDF basés sur un mot-clé de début de pdf.
 
@@ -242,7 +240,7 @@ def split_pdfs(input_dir: Path, output_dir: Path, regex_dict) -> tuple[list[Path
         
     return groups, indivs, errors
 
-def merge_pdfs_by_group(groups, merge_dir):
+def merge_pdfs_by_group(groups: list[str], merge_dir: Path) -> list[Path]:
     """
     Fusionne les fichiers PDF par groupement.
 
@@ -326,7 +324,7 @@ def merge_pdfs_by_group(groups, merge_dir):
     
     return merged_pdf_files
 
-def group_name_from_filename(filename: str) -> str:
+def group_name_from_filename(filename: Path) -> str:
     """
     Extrait le nom du groupe à partir du nom de fichier.
 
@@ -342,7 +340,7 @@ def group_name_from_filename(filename: str) -> str:
     """
     return ' - '.join(filename.stem.replace(' - ', '-').split('-')[2:])
 
-def sort_pdfs_by_group(df, pdl_dir, group_dir, merge_dir, symlink: bool=False):
+def sort_pdfs_by_group(df: DataFrame, pdl_dir: Path, group_dir: Path, merge_dir: Path, symlink: bool=False):
     """
     Trie les fichiers PDF par groupement en fonction des informations fournies dans un DataFrame.
 
@@ -390,7 +388,7 @@ def sort_pdfs_by_group(df, pdl_dir, group_dir, merge_dir, symlink: bool=False):
             # Copier le fichier PDF dans le bon dossier
             shutil.copy(pdf_file, destination_dir / pdf_file.name)
 
-def sort_xls_by_group(df, groups, merge_dir=None):
+def sort_xls_by_group(df: DataFrame, groups: list[str], merge_dir: Path=None):
     """
     Trie le fichier Excel par groupement et crée un excel par groupement dans des sous-dossiers spécifiques.
 
@@ -421,7 +419,7 @@ def sort_xls_by_group(df, groups, merge_dir=None):
         # Enregistrer les données triées dans un fichier Excel
         df_groupement.to_excel(group_dir / f"{group}.xlsx", index=False)
 
-def export_tables_as_pdf(groups : list[str], merge_dir : Path):
+def export_tables_as_pdf(groups: list[str], merge_dir: Path):
     """
     Exporte les tables Excel en fichiers PDF pour chaque groupement.
 
@@ -441,7 +439,7 @@ def export_tables_as_pdf(groups : list[str], merge_dir : Path):
 
         export_table_as_pdf(df_g, group_dir / f"Table_{group}.pdf")
 
-def create_grouped_invoices(df : DataFrame, group_dir : Path, merge_dir : Path) -> list[Path]:
+def create_grouped_invoices(df: DataFrame, group_dir: Path, merge_dir: Path) -> list[Path]:
     """
     Crée des factures groupées à partir des données fournies.
 
@@ -482,7 +480,7 @@ def create_grouped_invoices(df : DataFrame, group_dir : Path, merge_dir : Path) 
 def normalize(string: str) -> str:
     return str(string).replace(" ", "").replace("-", "").lower()
 
-def compress_pdfs(pdf_files, output_dir):
+def compress_pdfs(pdf_files: list[Path], output_dir: Path):
     """
     Compresse une liste de fichiers PDF et les enregistre dans un répertoire de sortie.
 
@@ -496,7 +494,7 @@ def compress_pdfs(pdf_files, output_dir):
             doc.save(output_dir / pdf_file.name, garbage=4, deflate=True)
             doc.close()
             
-def check_missing_pdl(df : DataFrame, pdl_dir: Path) -> set[str]:
+def check_missing_pdl(df: DataFrame, pdl_dir: Path) -> set[str]:
     """
     Vérifie que tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles.
 
