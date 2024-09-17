@@ -11,6 +11,8 @@ import sys
 import fitz
 import shutil
 
+from pdf_utils import ajouter_ligne_regroupement
+
 from mpl import export_table_as_pdf
 from rich.logging import RichHandler
 from rich.pretty import pprint
@@ -456,6 +458,14 @@ if __name__ == "__main__":
     
     #single_line_groups = [g for g in single_line_groups if g in found_groups]
     logger.info(f"Groupes avec une seule ligne : {single_line_groups}")
+    
+    matching_files_dict = {
+        g: [file for file in source_unitaires_dir.glob(f"*{df[df['groupement'] == g]['PRM'].values[0]}*.pdf")][0]
+        for g in single_line_groups
+    }
+    print(matching_files_dict)
+    for g, f in matching_files_dict.items():
+        ajouter_ligne_regroupement(f, f'Regroupement de facturation : ({g})')
     
     merged_pdf_files = create_grouped_invoices(df=df, group_dir=group_dir, merge_dir=merge_dir)
 
