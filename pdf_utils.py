@@ -25,9 +25,36 @@ def extraire_polices_pdf(fichier_pdf):
     return polices
 
 def ajouter_ligne_regroupement(fichier_pdf : Path, texte_regroupement : str, fontname : str="hebo", fontsize : int=11):
+    """
+    Ajoute une ligne de regroupement à un fichier PDF existant.
+
+    Paramètres:
+    fichier_pdf (Path): Le chemin vers le fichier PDF à modifier.
+    texte_regroupement (str): Le texte de regroupement à ajouter.
+    fontname (str): Le nom de la police à utiliser pour le texte ajouté. Par défaut "hebo".
+    fontsize (int): La taille de la police à utiliser pour le texte ajouté. Par défaut 11.
+
+    Cette fonction ouvre le fichier PDF spécifié, recherche une position spécifique
+    où ajouter le texte de regroupement, et sauvegarde le fichier modifié dans un
+    nouveau dossier nommé "groupement_facture_unique" situé dans le même répertoire
+    que le fichier d'entrée.
+    """
     
     # pymupdf.Base14_fontdict pour avoir les polices supportées
     def obtenir_lignes_regroupement(texte_regroupement: str, fontname: str, fontsize: int, max_largeur: int=500) -> list[str]:
+        """
+        Divise le texte de regroupement en plusieurs lignes si nécessaire pour s'adapter à la largeur maximale spécifiée.
+
+        Paramètres:
+        texte_regroupement (str): Le texte de regroupement à ajouter.
+        fontname (str): Le nom de la police à utiliser pour le texte ajouté.
+        fontsize (int): La taille de la police à utiliser pour le texte ajouté.
+        max_largeur (int): La largeur maximale autorisée pour une ligne de texte. Par défaut 500.
+
+        Retourne:
+        list[str]: Une liste de lignes de texte adaptées à la largeur maximale spécifiée.
+        """
+        
         lignes = []
         # Vérifier si le texte de regroupement est trop long pour une seule ligne
         if fitz.get_text_length(texte_regroupement, fontname=fontname, fontsize=fontsize) > max_largeur:
@@ -49,24 +76,24 @@ def ajouter_ligne_regroupement(fichier_pdf : Path, texte_regroupement : str, fon
     # Ouvrir le fichier PDF
     doc = fitz.open(fichier_pdf)
 
-    # Parcourir chaque page
-    for page_num in range(doc.page_count):
-        page = doc.load_page(page_num)
-        texte = page.get_text("text")
+    # Charger la première page uniquement
+    page = doc.load_page(0)
+    texte = page.get_text("text")
+    
+    # Définir le texte à rechercher
+    texte_a_rechercher = "Votre identifiant :"
+    
+    # Vérifier si le texte est présent dans la page
+    if texte_a_rechercher in texte:
+        # Rechercher la position du texte
+        zones_texte = page.search_for(texte_a_rechercher)
         
-        # Définir le texte à rechercher
-        texte_a_rechercher = "Votre identifiant :"
-        
-        # Vérifier si le texte est présent dans la page
-        if texte_a_rechercher in texte:
-            # Rechercher la position du texte
-            zones_texte = page.search_for(texte_a_rechercher)
-            
-            interligne = 10.9
-            # Ajouter la ligne spécifique en dessous du texte trouvé
-            for rect in zones_texte:
-                for i, l in enumerate(lignes):
-                    page.insert_text((rect.x0, rect.y0 + interligne*(2 + i)), l, fontsize=fontsize, fontname=fontname, color=(0, 0, 0))
+        interligne = 10.9
+        # Ajouter la ligne spécifique en dessous du texte trouvé
+        for rect in zones_texte:
+            for i, l in enumerate(lignes):
+                page.insert_text((rect.x0, rect.y0 + interligne*(2 + i)), l, fontsize=fontsize, fontname=fontname, color=(0, 0, 0))
+                    
     
     # Sauvegarder le fichier PDF modifié dans un nouveau dossier depuis le même dossier que le dossier d'entrée
     dossier_entree = Path(fichier_pdf).parent
