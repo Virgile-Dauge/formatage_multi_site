@@ -70,7 +70,7 @@ def safe_extract_text(page):
     try:
         return page.extract_text()
     except AttributeError as e:
-        print(f"Error extracting text from page: {e}")
+        logger.error(f"Error extracting text from page: {e}")
         return None
 
 def split_pdf(pdf_file_path : Path, output_dir : Path,  start_keyword : str="www.enargia.eus", regex_dict=None) -> tuple[list[Path], list[Path], Path]:
@@ -248,7 +248,6 @@ def group_name_from_filename(filename: str) -> str:
     return ' - '.join(filename.stem.replace(' - ', '-').split('-')[2:])
 
 def sort_pdfs_by_group(df, pdl_dir, group_dir, merge_dir, symlink: bool=False):
-    uncopied = []
     for pdf_file in pdl_dir.glob('*.pdf'):
         # Extraire le PDL à partir du nom de fichier (ex: _123456789.pdf)
         # On suppose que le numéro PDL est avant l'extension du fichier
@@ -273,8 +272,7 @@ def sort_pdfs_by_group(df, pdl_dir, group_dir, merge_dir, symlink: bool=False):
                     os.symlink(pdf_file, destination_dir / pdf_file.name)
                 else :
                     shutil.copy(pdf_file, destination_dir / pdf_file.name)
-        else:
-            uncopied += [pdf_file]
+
       
     for pdf_file in group_dir.glob('*.pdf'):
         # Extraire le nom du groupe à partir du nom de fichier
@@ -282,15 +280,10 @@ def sort_pdfs_by_group(df, pdl_dir, group_dir, merge_dir, symlink: bool=False):
 
         # Définir le chemin du dossier de destination basé sur le groupe
         destination_dir = merge_dir / group_name
-        # Créer le répertoire cible s'il n'existe pas
-        if not destination_dir.exists():
-            uncopied += [pdf_file]
-        else:
+        
+        if destination_dir.exists():
             # Copier le fichier PDF dans le bon dossier
             shutil.copy(pdf_file, destination_dir / pdf_file.name)
-
-    if uncopied:   
-        logger.warning(f'Uncopied files : {uncopied}')
 
 def sort_xls_by_group(df, groups, merge_dir=None):
     """
@@ -333,7 +326,34 @@ def export_tables_as_pdf(groups : list[str], merge_dir : Path):
 
         export_table_as_pdf(df_g, group_dir / f"Table_{group}.pdf")
 
-def normalize(string):
+def create_grouped_invoices(df : DataFrame, group_dir : Path, merge_dir : Path) -> list[Path]:
+    # Détecter les groupes avec plusieurs pdls
+    groups = df.groupby("groupement").filter(lambda x: len(x)>1)["groupement"].unique()
+
+    if "nan" in groups:
+        groups = groups.remove("nan")
+    
+    # Filtrer les groupes pour n'avoir que ceux trouvés dans les factures de regroupement
+    found_groups = set([group_name_from_filename(f) for f in group_dir.glob("*.pdf")])
+    groups = [g for g in groups if g in found_groups]
+    logger.info(f"Groupements à traiter : {groups}")
+    
+    logger.info("Tri des fichiers Excel défusionnés \n")
+    sort_xls_by_group(df, groups, merge_dir)
+
+    logger.info("Export en PDF des tableurs Excel  \n")
+    export_tables_as_pdf(groups, merge_dir)
+
+    logger.info("Tri des fichiers PDF défusionnés \n")
+    sort_pdfs_by_group(df, source_unitaires_dir, group_dir, merge_dir)
+
+    logger.info("Fusion des PDF par groupement")
+    merged_pdf_files = merge_pdfs_by_group(groups, merge_dir)
+    logger.info("└── Fin de la fusion")
+    
+    return merged_pdf_files
+
+def normalize(string: str) -> str:
     return str(string).replace(" ", "").replace("-", "").lower()
 
 def compress_pdfs(pdf_files, output_dir):
@@ -351,14 +371,14 @@ def check_missing_pdl(df : DataFrame, pdl_dir: Path) -> set[str]:
     pdl_in_sources = {re.search(pdl_pattern, pdf_path.stem).group(1) for pdf_path in pdl_dir.glob("*.pdf") if re.search(pdl_pattern, pdf_path.stem)}
     missing_pdls = pdl_in_lien - pdl_in_sources
     if missing_pdls:
-        logger.warning(f"Les PDLs suivants sont manquants dans les factures individuelles: {missing_pdls}")
+        logger.warning(f"└── Les PDLs suivants sont manquants dans les factures individuelles: {missing_pdls}")
         missing_pdls_file = data_dir / "output" / "missing_pdls.csv"
         df_missing_pdls = df[df["PRM"].astype(str).isin(missing_pdls)]
         df_missing_pdls.to_csv(missing_pdls_file, index=False)
-        logger.info(f"Les PDLs manquants ont été enregistrés dans {missing_pdls_file}")
+        logger.info(f"    └── Les PDLs manquants ont été enregistrés dans {missing_pdls_file}")
         
     else:
-        logger.info("Tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles.")
+        logger.info("└── Tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles.")
     return missing_pdls
 
 if __name__ == "__main__":
@@ -392,6 +412,8 @@ if __name__ == "__main__":
     
     source_unitaires_dir.mkdir(exist_ok=True, parents=True)
     
+    
+    # Extraction
     logger.info("Extraction des factures...")
     # regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "group_name": group_name_pattern, "pdl_name": pdl_pattern}
     regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "pdl_name": pdl_pattern}
@@ -415,7 +437,7 @@ if __name__ == "__main__":
 
     logger.info(f"Lecture du fichier Excel 'lien.xlsx' pour retrouver les regroupement et PDL associés")
     if not (data_dir / 'input' / "lien.xlsx").exists():
-        logger.warning("Le fichier 'lien.xlsx' est introuvable. Arrêt de l'exécution.")
+        logger.warning("└── Le fichier 'lien.xlsx' est introuvable. Arrêt de l'exécution.")
         sys.exit(0)
         
     # Lecture des données Excel
@@ -429,33 +451,13 @@ if __name__ == "__main__":
     
     # Détecter les groupes qui n'ont qu'une seule ligne dans df
     single_line_groups = df.groupby("groupement").filter(lambda x: len(x) == 1)["groupement"].unique()
+    if "nan" in single_line_groups:
+        single_line_groups = single_line_groups.remove("nan")
     
-    
-    groups = df.groupby("groupement").filter(lambda x: len(x)>1)["groupement"].unique()
-
-    if "nan" in groups:
-        groups = groups.remove("nan")
-    
-    # Filtrer les groupes pour n'avoir que ceux trouvés dans les factures de regroupement
-    found_groups = set([group_name_from_filename(f) for f in group_dir.glob("*.pdf")])
-    
-    single_line_groups = [g for g in single_line_groups if g in found_groups]
+    #single_line_groups = [g for g in single_line_groups if g in found_groups]
     logger.info(f"Groupes avec une seule ligne : {single_line_groups}")
-    groups = [g for g in groups if g in found_groups]
     
-    logger.info(groups)
-    logger.info("Tri des fichiers Excel défusionnés \n")
-    sort_xls_by_group(df, groups, merge_dir)
-
-    logger.info("Export en PDF des tableurs Excel  \n")
-    export_tables_as_pdf(groups, merge_dir)
-
-    logger.info("Tri des fichiers PDF défusionnés \n")
-    sort_pdfs_by_group(df, source_unitaires_dir, group_dir, merge_dir)
-
-    logger.info("Fusion des PDF par groupement")
-    merged_pdf_files = merge_pdfs_by_group(groups, merge_dir)
-    logger.info("└── Fin de la fusion")
+    merged_pdf_files = create_grouped_invoices(df=df, group_dir=group_dir, merge_dir=merge_dir)
 
     logger.info("Reduce PDF size")
     compress_pdfs(merged_pdf_files, res_dir)
