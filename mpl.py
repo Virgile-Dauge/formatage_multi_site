@@ -14,6 +14,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger()
 
+# Supprimer les messages de débogage de font_manager
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
+
 def export_table_as_pdf(df, pdf_filename):
     # Fixe la police utilisee
     plt.rcParams['font.family'] = 'DejaVu Sans'
@@ -86,6 +89,6 @@ def export_table_as_pdf(df, pdf_filename):
 
             plt.close(fig)
 
-    logger.info(f"Le fichier PDF '{pdf_filename}' a été créé avec succès.")
+    logger.debug(f"Le fichier PDF '{pdf_filename}' a été créé avec succès.")
 
 
