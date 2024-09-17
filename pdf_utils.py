@@ -24,9 +24,9 @@ def extraire_polices_pdf(fichier_pdf):
     doc.close()
     return polices
 
-def ajouter_ligne_regroupement(fichier_pdf : Path, texte_regroupement : str, fontname : str="helv", fontsize : int=11):
+def ajouter_ligne_regroupement(fichier_pdf : Path, texte_regroupement : str, fontname : str="hebo", fontsize : int=11):
     
-    
+    # pymupdf.Base14_fontdict pour avoir les polices supportées
     def obtenir_lignes_regroupement(texte_regroupement: str, fontname: str, fontsize: int, max_largeur: int=500) -> list[str]:
         lignes = []
         # Vérifier si le texte de regroupement est trop long pour une seule ligne
@@ -62,7 +62,7 @@ def ajouter_ligne_regroupement(fichier_pdf : Path, texte_regroupement : str, fon
             # Rechercher la position du texte
             zones_texte = page.search_for(texte_a_rechercher)
             
-            interligne = 10.8
+            interligne = 10.9
             # Ajouter la ligne spécifique en dessous du texte trouvé
             for rect in zones_texte:
                 for i, l in enumerate(lignes):
