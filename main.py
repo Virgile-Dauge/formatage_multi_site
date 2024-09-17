@@ -35,6 +35,18 @@ client_name_pattern = r'Nom et Prénom ou\s* Raison Sociale :\s*(.*)'
 pdl_pattern = r'Référence PDL : (\d{14})'
 
 def extract_group_name(text):
+    """
+    Extrait le nom du groupe à partir d'un texte donné en recherchant une expression spécifique.
+
+    Cette fonction utilise une expression régulière pour trouver le texte entre parenthèses après 
+    "Regroupement de facturation :". Elle gère également les parenthèses imbriquées.
+
+    Paramètres:
+    text (str): Le texte à analyser.
+
+    Retourne:
+    str: Le nom du groupe extrait du texte, ou None si le motif n'est pas trouvé.
+    """
     # Regex pour trouver le début de la parenthèse
     pattern = r'Regroupement de facturation\s*:\s*\('
     match = re.search(pattern, text)
@@ -57,6 +69,20 @@ def extract_group_name(text):
     return None
 
 def copy_pdf(source : Path, dest: Path):
+    """
+    Copie les fichiers PDF d'un répertoire source vers un répertoire de destination.
+
+    Cette fonction vérifie d'abord l'existence des répertoires source et destination, 
+    puis copie les fichiers PDF du répertoire source qui ne sont pas déjà présents 
+    dans le répertoire de destination.
+
+    Paramètres:
+    source (Path): Le chemin du répertoire source contenant les fichiers PDF à copier.
+    dest (Path): Le chemin du répertoire de destination où les fichiers PDF seront copiés.
+
+    Retourne:
+    None
+    """
 
     source.mkdir(exist_ok=True, parents=True)
     factures_unitaires = list(source.glob('*.pdf'))
@@ -87,12 +113,24 @@ def safe_extract_text(page: PageObject) -> str | None:
         return None
 
 def split_pdf(pdf_file_path : Path, output_dir : Path,  start_keyword : str="www.enargia.eus", regex_dict=None) -> tuple[list[Path], list[Path], Path]:
+    """
+    Divise un fichier PDF en plusieurs sous-PDF basés sur un mot-clé de début de pdf.
+
+    Paramètres:
+    - pdf_file_path (Path): Le chemin du fichier PDF à diviser.
+    - output_dir (Path): Le répertoire où les sous-PDF seront enregistrés.
+    - start_keyword (str): Le mot-clé indiquant le début d'un nouveau sous-PDF. Par défaut "www.enargia.eus".
+    - regex_dict (dict, optionnel): Un dictionnaire contenant des motifs regex pour extraire des informations spécifiques du texte PDF.
+
+    Retourne:
+    - tuple: Trois listes contenant respectivement les chemins des fichiers PDF de groupe, les chemins des fichiers PDF individuels et les erreurs rencontrées.
+    """
     indiv = []
     group = []
+    
     # Ouvrir le fichier PDF
     try:
         reader = PdfReader(pdf_file_path)
-        # Continuez avec le reste du traitement
     except EmptyFileError as e:
         logger.error(f"Erreur : {e} '{pdf_file_path}'")
         return group, indiv, [pdf_file_path]
@@ -104,6 +142,8 @@ def split_pdf(pdf_file_path : Path, output_dir : Path,  start_keyword : str="www
     client_name = None
     group_name = None
     pdl_name = None
+    
+    # Créer les répertoires de sortie s'ils n'existent pas
     (output_dir / 'group').mkdir(exist_ok=True, parents=True)
     (output_dir / 'indiv').mkdir(exist_ok=True, parents=True)
 
@@ -111,7 +151,7 @@ def split_pdf(pdf_file_path : Path, output_dir : Path,  start_keyword : str="www
         page = reader.pages[i]
         text = safe_extract_text(page)
         if text is None:
-            logger.error(f"Impossible d'extraire le texte de la page {i} de {pdf_file_path} Arrêt de l'exécution.")
+            logger.error(f"Impossible d'extraire le texte de la page {i} de {pdf_file_path}. Arrêt de l'exécution.")
             return group, indiv, [pdf_file_path]
 
         # Rechercher le mot-clé indiquant le début d'un nouveau sous-PDF
@@ -120,12 +160,13 @@ def split_pdf(pdf_file_path : Path, output_dir : Path,  start_keyword : str="www
                 # Enregistrer le PDF précédent avant de commencer un nouveau
                 if group_name and date and client_name:
                     output_pdf_path = output_dir / 'group' / f"{date}-{client_name} - {group_name}.pdf"
-                    group += [output_pdf_path]
+                    group.append(output_pdf_path)
                 elif pdl_name and date and client_name:
                     output_pdf_path = output_dir / 'indiv' / f"{date}-{client_name} - {pdl_name}.pdf"
-                    indiv += [output_pdf_path]
+                    indiv.append(output_pdf_path)
                 else:
                     output_pdf_path = None
+                
                 if output_pdf_path:
                     # Enlever les métadonnées pour alléger le fichier
                     with open(output_pdf_path, "wb") as output_pdf:
@@ -140,7 +181,7 @@ def split_pdf(pdf_file_path : Path, output_dir : Path,  start_keyword : str="www
             # Extraire la date
             date_match = re.search(date_pattern, text)
             if date_match:
-                date = f"{date_match.group(3)}{date_match.group(2)}{date_match.group(1)}"#.replace("\n", " ")
+                date = f"{date_match.group(3)}{date_match.group(2)}{date_match.group(1)}"
 
             # Extraire le nom du client
             client_name_match = re.search(client_name_pattern, text)
@@ -150,6 +191,7 @@ def split_pdf(pdf_file_path : Path, output_dir : Path,  start_keyword : str="www
             # Extraire le nom du groupement
             group_name = extract_group_name(text)
 
+            # Extraire le nom du PDL
             pdl_match = re.search(pdl_pattern, text)
             if pdl_match:
                 pdl_name = pdl_match.group(1)
@@ -162,12 +204,13 @@ def split_pdf(pdf_file_path : Path, output_dir : Path,  start_keyword : str="www
     if writer:
         if group_name and date and client_name:
             output_pdf_path = output_dir / 'group' / f"{date}-{client_name} - {group_name}.pdf"
-            group += [output_pdf_path]
+            group.append(output_pdf_path)
         elif pdl_name and date and client_name:
             output_pdf_path = output_dir / 'indiv' / f"{date}-{client_name} - {pdl_name}.pdf"
-            indiv += [output_pdf_path]
+            indiv.append(output_pdf_path)
         else:
             output_pdf_path = None
+        
         if output_pdf_path:
             with open(output_pdf_path, "wb") as output_pdf:
                 writer.write(output_pdf)
@@ -200,18 +243,37 @@ def split_pdfs(input_dir: Path, output_dir: Path, regex_dict) -> tuple[list[Path
     return groups, indivs, errors
 
 def merge_pdfs_by_group(groups, merge_dir):
+    """
+    Fusionne les fichiers PDF par groupement.
+
+    Cette fonction prend une liste de groupes et un répertoire de fusion, puis fusionne les fichiers PDF
+    associés à chaque groupe en un seul fichier PDF par groupe.
+
+    Paramètres:
+    groups (list): Liste des groupes à traiter.
+    merge_dir (Path): Répertoire où se trouvent les fichiers PDF à fusionner.
+
+    Retourne:
+    list: Liste des chemins des fichiers PDF fusionnés.
+    """
     merged_pdf_files = []
-    # fusioner par groupement
+    
+    # Fusionner par groupement
     for group in groups:
+        # Lire le fichier Excel contenant les informations des PDLs pour le groupe
         df = pd.read_excel(merge_dir / str(group) / f"{group}.xlsx")
         pdls = df["PRM"]
         group = str(group)
+        
+        # Récupérer tous les fichiers PDF dans le répertoire du groupe
         pdf_files = [f.resolve() for f in (merge_dir / group).iterdir() if f.suffix == ".pdf"]
         
         merger = PdfWriter()
         
+        # Vérifier si le nombre de fichiers PDF correspond au nombre de PDLs + 2 (facture globale et tableau)
         if len(pdf_files) != len(pdls) + 2:
             logger.warning(f"Le nombre de fichiers PDF ({len(pdf_files)}) ne correspond pas au nombre de PDL ({len(pdls)}) pour le groupe {group}.")
+        
         # Identifier les PDLs manquants
         pdf_pdls = [re.search(r'(\d{14})', pdf.stem).group(1) for pdf in pdf_files if re.search(r'(\d{14})', pdf.stem)]
         pdf_pdls = [pdl for pdl in pdf_pdls if pdl is not None]
@@ -219,52 +281,85 @@ def merge_pdfs_by_group(groups, merge_dir):
         
         if missing_pdls:
             logger.warning(f"Les PDLs suivants sont manquants dans les fichiers PDF: {missing_pdls}")
+        
+        # Trouver la facture globale du groupement
         group_pdf = [f for f in pdf_files if normalize(group) in normalize(f.name) and not f.name.startswith("Table") and not re.search(r'\d{14}$', f.stem)]
         
-        if len(group_pdf)>1:
+        if len(group_pdf) > 1:
             logger.warning(f'Plusieurs factures de groupement ont été trouvées pour {group}!')
             logger.warning(group_pdf)
             group_pdf = [group_pdf[1]]
         
         if not group_pdf:
-            logger.warning(f"Aucune facture de groupement n'a été trouvées dans le même dossier pour {group}!")
+            logger.warning(f"Aucune facture de groupement n'a été trouvée dans le même dossier pour {group}!")
         else:
-            # ajoute la facture globale en premier
+            # Ajouter la facture globale en premier
             merger.append(group_pdf[0])
             pdf_files.remove(group_pdf[0])
             filename_parts = group_pdf[0].stem.split('-')
             if len(filename_parts) >= 2:
                 date = filename_parts[0].strip()
                 name = filename_parts[1].strip()
-            
+        
+        # Trouver le fichier PDF du tableau
         table_pdf = [f for f in pdf_files if f.name.startswith("Table") and normalize(group) in normalize(f.name)]
         merger.append(table_pdf[0])
         pdf_files.remove(table_pdf[0])
 
-        # Rajoute les factures unitaires dans l'ordre d'apparition du tableau.
+        # Ajouter les factures unitaires dans l'ordre d'apparition du tableau
         for pdl in pdls:
             for pdf in pdf_files:
                 if str(pdl) in pdf.name:
                     merger.append(pdf)
                     pdf_files.remove(pdf)
+        
         if len(pdf_files) != 0:
             logger.warning(f"Certains PDF n'ont pas été fusionnés: {pdf_files}")
         
+        # Renommer le fichier de sortie si nécessaire
         name = 'CAPB' if name == 'COMMUNAUTE_AGGLOMERATION_PAYS_BASQUE' else name
-        merger.write((merge_dir) / f"{date}-{name}-{group}.pdf")
-        merged_pdf_files.append(merge_dir / f"{date}-{name}-{group}.pdf")
+        output_pdf_path = merge_dir / f"{date}-{name}-{group}.pdf"
+        merger.write(output_pdf_path)
+        merged_pdf_files.append(output_pdf_path)
         merger.close()
-        logger.info(f"Fusionné: {date}-{name}-{group}.pdf")
+        logger.info(f"Fusionné: {output_pdf_path}")
+    
     return merged_pdf_files
 
 def group_name_from_filename(filename: str) -> str:
+    """
+    Extrait le nom du groupe à partir du nom de fichier.
+
+    Cette fonction prend un nom de fichier, remplace les occurrences de ' - ' par '-',
+    divise le nom de fichier en utilisant '-' comme séparateur, et joint les parties
+    à partir de la troisième partie avec ' - '.
+
+    Paramètres:
+    filename (str): Le nom du fichier dont on veut extraire le nom du groupe.
+
+    Retourne:
+    str: Le nom du groupe extrait du nom de fichier.
+    """
     return ' - '.join(filename.stem.replace(' - ', '-').split('-')[2:])
 
 def sort_pdfs_by_group(df, pdl_dir, group_dir, merge_dir, symlink: bool=False):
+    """
+    Trie les fichiers PDF par groupement en fonction des informations fournies dans un DataFrame.
+
+    Paramètres:
+    df (DataFrame): Le DataFrame contenant les informations de groupement et de PDL.
+    pdl_dir (Path): Le répertoire contenant les fichiers PDF des PDL.
+    group_dir (Path): Le répertoire contenant les fichiers PDF des groupements.
+    merge_dir (Path): Le répertoire où les fichiers triés seront enregistrés.
+    symlink (bool): Indique s'il faut créer des liens symboliques au lieu de copier les fichiers. Par défaut False.
+
+    Cette fonction trie les fichiers PDF des PDL et des groupements dans des sous-dossiers spécifiques
+    basés sur les informations de groupement fournies dans le DataFrame.
+    """
     for pdf_file in pdl_dir.glob('*.pdf'):
         # Extraire le PDL à partir du nom de fichier (ex: _123456789.pdf)
         # On suppose que le numéro PDL est avant l'extension du fichier
-        pdl_number = pdf_file.stem.split('-')[-1].replace(' ', '')  #le PDL est après le dernier '-'
+        pdl_number = pdf_file.stem.split('-')[-1].replace(' ', '')  # le PDL est après le dernier '-'
 
         # Chercher ce PDL dans le DataFrame
         matching_row = df[df['PRM'] == int(pdl_number)]
@@ -277,16 +372,13 @@ def sort_pdfs_by_group(df, pdl_dir, group_dir, merge_dir, symlink: bool=False):
             destination_dir = merge_dir / groupement_dir
             
             # Créer le dossier de destination s'il n'existe pas
-            #destination_dir.mkdir(parents=True, exist_ok=True)
             if destination_dir.exists():
                 # Copier le fichier PDF dans le bon dossier
-                # shutil.copy(pdf_file, destination_dir / pdf_file.name)
                 if symlink:
                     os.symlink(pdf_file, destination_dir / pdf_file.name)
-                else :
+                else:
                     shutil.copy(pdf_file, destination_dir / pdf_file.name)
 
-      
     for pdf_file in group_dir.glob('*.pdf'):
         # Extraire le nom du groupe à partir du nom de fichier
         group_name = group_name_from_filename(pdf_file)
@@ -330,18 +422,39 @@ def sort_xls_by_group(df, groups, merge_dir=None):
         df_groupement.to_excel(group_dir / f"{group}.xlsx", index=False)
 
 def export_tables_as_pdf(groups : list[str], merge_dir : Path):
+    """
+    Exporte les tables Excel en fichiers PDF pour chaque groupement.
+
+    Paramètres:
+    groups (list[str]): Liste des noms de groupements.
+    merge_dir (Path): Chemin vers le répertoire contenant les fichiers Excel des groupements.
+
+    Cette fonction lit les fichiers Excel pour chaque groupement, supprime la colonne 'membre' si elle existe,
+    et exporte les données restantes en fichiers PDF.
+    """
     for group in groups:
         group_dir = merge_dir / str(group)
         df_g = pd.read_excel(group_dir / f"{group}.xlsx")
-        # On enleve la colonne 'membre' pour l'export
+        # On enlève la colonne 'membre' pour l'export
         if 'membre' in df_g.columns:
             df_g = df_g.drop('membre', axis=1)
 
         export_table_as_pdf(df_g, group_dir / f"Table_{group}.pdf")
 
 def create_grouped_invoices(df : DataFrame, group_dir : Path, merge_dir : Path) -> list[Path]:
-    # Détecter les groupes avec plusieurs pdls
-    groups = df.groupby("groupement").filter(lambda x: len(x)>1)["groupement"].unique()
+    """
+    Crée des factures groupées à partir des données fournies.
+
+    Paramètres:
+    df (DataFrame): Le DataFrame contenant les données des factures.
+    group_dir (Path): Le chemin vers le répertoire contenant les factures de regroupement.
+    merge_dir (Path): Le chemin vers le répertoire où les factures groupées seront enregistrées.
+
+    Retourne:
+    list[Path]: Une liste des chemins des fichiers PDF fusionnés.
+    """
+    # Détecter les groupes avec plusieurs PDLs
+    groups = df.groupby("groupement").filter(lambda x: len(x) > 1)["groupement"].unique()
 
     if "nan" in groups:
         groups = groups.remove("nan")
@@ -354,10 +467,10 @@ def create_grouped_invoices(df : DataFrame, group_dir : Path, merge_dir : Path) 
     logger.info("Tri des fichiers Excel défusionnés \n")
     sort_xls_by_group(df, groups, merge_dir)
 
-    logger.info("Export en PDF des tableurs Excel  \n")
+    logger.info("Export en PDF des tableurs Excel \n")
     export_tables_as_pdf(groups, merge_dir)
 
-    logger.info("Tri des fichiers PDF défusionnés \n")
+    logger.info("Tri des fichiers PDF défusionnés \n")
     sort_pdfs_by_group(df, source_unitaires_dir, group_dir, merge_dir)
 
     logger.info("Fusion des PDF par groupement")
@@ -370,16 +483,33 @@ def normalize(string: str) -> str:
     return str(string).replace(" ", "").replace("-", "").lower()
 
 def compress_pdfs(pdf_files, output_dir):
+    """
+    Compresse une liste de fichiers PDF et les enregistre dans un répertoire de sortie.
+
+    Paramètres:
+    pdf_files (list[Path]): Liste des chemins des fichiers PDF à compresser.
+    output_dir (Path): Chemin du répertoire où les fichiers PDF compressés seront enregistrés.
+    """
     for pdf_file in pdf_files:
         doc = fitz.open(pdf_file)
         if not doc.page_count == 0:
             doc.save(output_dir / pdf_file.name, garbage=4, deflate=True)
             doc.close()
-
+            
 def check_missing_pdl(df : DataFrame, pdl_dir: Path) -> set[str]:
-    logger.info("Vérification des PDLs dans 'lien.xlsx' par rapport aux factures individuelles...")
+    """
+    Vérifie que tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles.
+
+    Paramètres:
+    df (DataFrame): Le dataframe contenant les informations des PDLs.
+    pdl_dir (Path): Le chemin vers le répertoire contenant les factures individuelles.
+
+    Retourne:
+    set[str]: Un ensemble de PDLs manquants dans les factures individuelles.
+    """
+    logger.info("Vérification que tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles.")
     pdl_in_lien = set(df["PRM"].astype(str))
-    pdl_in_sources = set()
+    #pdl_in_sources = set()
     pdl_pattern = r'(\d{14})'
     pdl_in_sources = {re.search(pdl_pattern, pdf_path.stem).group(1) for pdf_path in pdl_dir.glob("*.pdf") if re.search(pdl_pattern, pdf_path.stem)}
     missing_pdls = pdl_in_lien - pdl_in_sources
