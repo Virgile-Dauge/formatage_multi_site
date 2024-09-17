@@ -3,13 +3,15 @@ import re
 import logging
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import EmptyFileError
+# from pypdf.annotations import PageObject
+from pypdf import PageObject
 import argparse
 from pathlib import Path
 import pandas as pd
 from pandas import DataFrame
 import sys
-import fitz
 import shutil
+import fitz
 
 from pdf_utils import ajouter_ligne_regroupement
 
@@ -68,11 +70,20 @@ def copy_pdf(source : Path, dest: Path):
         for file in to_copy:
             shutil.copy(file, dest / file.name)
     
-def safe_extract_text(page):
+def safe_extract_text(page: PageObject) -> str | None:
+    """
+    Extrait le texte d'une page PDF de manière sécurisée.
+
+    Paramètres:
+    page (Page): La page PDF dont le texte doit être extrait.
+
+    Retourne:
+    str: Le texte extrait de la page, ou None en cas d'erreur.
+    """
     try:
         return page.extract_text()
     except AttributeError as e:
-        logger.error(f"Error extracting text from page: {e}")
+        logger.error(f"Erreur lors de l'extraction du texte de la page : {e}")
         return None
 
 def split_pdf(pdf_file_path : Path, output_dir : Path,  start_keyword : str="www.enargia.eus", regex_dict=None) -> tuple[list[Path], list[Path], Path]:
@@ -118,7 +129,7 @@ def split_pdf(pdf_file_path : Path, output_dir : Path,  start_keyword : str="www
                 if output_pdf_path:
                     # Enlever les métadonnées pour alléger le fichier
                     with open(output_pdf_path, "wb") as output_pdf:
-                        logger.info(f"Enregistrement du PDF: {output_pdf_path}.")
+                        logger.debug(f"Enregistrement du PDF: {output_pdf_path}.")
                         writer.write(output_pdf)
                 writer = None
 
@@ -387,7 +398,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Définir le répertoire de données")
     parser.add_argument("data_dir", type=str, help="Le chemin du répertoire de données")
     parser.add_argument("-ec", "--extra_check", action="store_true", help="Vérifie que tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles")
+    parser.add_argument("-v", "--verbose", action="count", default=0, help="Augmente le niveau de verbosité (utilisez -v ou -vv pour plus de détails)")
     args = parser.parse_args()
+
+    # Configurer le niveau de verbosité
+    if args.verbose == 1:
+        logger.setLevel(logging.INFO)
+    elif args.verbose >= 2:
+        logger.setLevel(logging.DEBUG)
     
     # définition de l'arborescence
     data_dir = args.data_dir
@@ -463,7 +481,7 @@ if __name__ == "__main__":
         g: [file for file in source_unitaires_dir.glob(f"*{df[df['groupement'] == g]['PRM'].values[0]}*.pdf")][0]
         for g in single_line_groups
     }
-    print(matching_files_dict)
+
     for g, f in matching_files_dict.items():
         ajouter_ligne_regroupement(f, f'Regroupement de facturation : ({g})')
     
