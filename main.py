@@ -33,6 +33,19 @@ logger = logging.getLogger()
 date_pattern = r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})'
 client_name_pattern = r'Nom et Prénom ou\s* Raison Sociale :\s*(.*)'
 pdl_pattern = r'Référence PDL : (\d{14})'
+def copy_metadata(reader: PdfReader, writer: PdfWriter):
+    if reader.metadata:
+        metadata = reader.metadata
+        writer.add_metadata({
+            '/Title': metadata.get('/Title', ''),
+            '/Author': metadata.get('/Author', ''),
+            '/Subject': metadata.get('/Subject', ''),
+            '/Keywords': metadata.get('/Keywords', ''),
+            '/Creator': metadata.get('/Creator', ''),
+            '/Producer': metadata.get('/Producer', ''),
+            '/CreationDate': metadata.get('/CreationDate', ''),
+            '/ModDate': metadata.get('/ModDate', '')
+        })
 
 def extract_group_name(text: str) -> str | None:
     """
@@ -176,7 +189,8 @@ def split_pdf(pdf_file_path: Path, output_dir: Path,  start_keyword: str="www.en
 
             # Créer un nouveau writer pour le prochain sous-PDF
             writer = PdfWriter()
-            writer.clone_reader_document_root(reader)
+            #writer.clone_reader_document_root(reader)
+            copy_metadata(reader, writer)
             writer.add_page(page)
 
             # Extract invoice number
@@ -621,14 +635,21 @@ if __name__ == "__main__":
     #single_line_groups = [g for g in single_line_groups if g in found_groups]
     logger.info(f"Groupes avec une seule ligne : {single_line_groups}")
     
-    matching_files_dict = {
-        g: [file for file in source_unitaires_dir.glob(f"*{df[df['groupement'] == g]['PRM'].values[0]}*.pdf")][0]
-        for g in df['groupement'].unique()
-        if len([file for file in source_unitaires_dir.glob(f"*{df[df['groupement'] == g]['PRM'].values[0]}*.pdf")]) > 0
-    }
+    # matching_files_dict = {
+    #     g: [file for file in source_unitaires_dir.glob(f"*{df[df['groupement'] == g]['PRM'].values[0]}*.pdf")][0]
+    #     for g in df['groupement'].unique()
+    #     if len([file for file in source_unitaires_dir.glob(f"*{df[df['groupement'] == g]['PRM'].values[0]}*.pdf")]) > 0
+    # }
+    matching_files_dict = {}
+    for g in df['groupement'].unique():
+        prm_values = df[df['groupement'] == g]['PRM'].values
+        if len(prm_values) > 0:
+            matching_files = list(source_unitaires_dir.glob(f"*{prm_values[0]}*.pdf"))
+            if matching_files:
+                matching_files_dict[g] = matching_files[0]
 
     for g, f in matching_files_dict.items():
-        ajouter_ligne_regroupement(f, f'Regroupement de facturation : ({g})')
+        ajouter_ligne_regroupement(f, output_dir, f'Regroupement de facturation : ({g})')
     
     merged_pdf_files = create_grouped_invoices(df=df, group_dir=group_dir, merge_dir=merge_dir)
 
