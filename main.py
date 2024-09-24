@@ -1,9 +1,11 @@
 import os
 import re
 import logging
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfReader, PdfWriter, PageObject
 from pypdf.errors import EmptyFileError
-from pypdf import PageObject
+
+from pypdf.generic import ArrayObject, ByteStringObject
+
 import argparse
 from pathlib import Path
 import pandas as pd
@@ -174,8 +176,22 @@ def split_pdf(pdf_file_path: Path, output_dir: Path,  start_keyword: str="www.en
 
             # Créer un nouveau writer pour le prochain sous-PDF
             writer = PdfWriter()
+            writer.clone_reader_document_root(reader)
             writer.add_page(page)
 
+            # Extract invoice number
+            invoice_pattern = r'N° de facture\s*:\s*(\d{14})'
+            invoice_match = re.search(invoice_pattern, text)
+            if invoice_match:
+                invoice_number = invoice_match.group(1)
+                # Convert invoice number to bytes and pad or truncate to 16 bytes
+                id_bytes = invoice_number.encode('utf-8')[:16].ljust(16, b'\0')
+                # Create PdfObject for ID
+                id_object = ByteStringObject(id_bytes)
+                writer._ID = ArrayObject([id_object, id_object])  # Use the same value for both array elements
+            else:
+                logger.warning(f"No invoice number found for {output_pdf_path}. ID not set.")
+            
             # Extraire la date
             date_match = re.search(date_pattern, text)
             if date_match:
@@ -452,7 +468,7 @@ def create_grouped_invoices(df: DataFrame, group_dir: Path, merge_dir: Path) -> 
     list[Path]: Une liste des chemins des fichiers PDF fusionnés.
     """
     # Détecter les groupes avec plusieurs PDLs
-    groups = df.groupby("groupement").filter(lambda x: len(x) > 1)["groupement"].unique()
+    groups = df.groupby("groupement").filter(lambda x: len(x) >= 1)["groupement"].unique()
 
     if "nan" in groups:
         groups = groups.remove("nan")
@@ -607,7 +623,8 @@ if __name__ == "__main__":
     
     matching_files_dict = {
         g: [file for file in source_unitaires_dir.glob(f"*{df[df['groupement'] == g]['PRM'].values[0]}*.pdf")][0]
-        for g in single_line_groups
+        for g in df['groupement'].unique()
+        if len([file for file in source_unitaires_dir.glob(f"*{df[df['groupement'] == g]['PRM'].values[0]}*.pdf")]) > 0
     }
 
     for g, f in matching_files_dict.items():
