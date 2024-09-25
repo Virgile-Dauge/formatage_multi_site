@@ -658,7 +658,6 @@ if __name__ == "__main__":
 
     logger.info(f"Groupes avec une seule ligne : {single_line_groups['groupement'].tolist()}")
 
-    # matching_files_dict = {}
     for _, row in single_line_groups.iterrows():
         group = row['groupement']
         prm = row['PRM']
@@ -667,9 +666,6 @@ if __name__ == "__main__":
             ajouter_ligne_regroupement(matching_files[0], output_dir, f'Regroupement de facturation : ({group})')
         else:
             logger.warning(f"Aucun fichier trouvé pour le pdl {prm} du groupe à pdl unique {group}")
-
-    # for g, f in matching_files_dict.items():
-    #     ajouter_ligne_regroupement(f, output_dir, f'Regroupement de facturation : ({g})')
     
     merged_pdf_files = create_grouped_invoices(df=df, group_dir=group_dir, merge_dir=merge_dir)
 
