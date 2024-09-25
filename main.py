@@ -650,29 +650,26 @@ if __name__ == "__main__":
     if args.extra_check:
         check_missing_pdl(df, source_unitaires_dir)
     
-    # Détecter les groupes qui n'ont qu'une seule ligne dans df
-    single_line_groups = df.groupby("groupement").filter(lambda x: len(x) == 1)["groupement"].unique()
-    if "nan" in single_line_groups:
-        single_line_groups = single_line_groups.remove("nan")
-    
-    #single_line_groups = [g for g in single_line_groups if g in found_groups]
-    logger.info(f"Groupes avec une seule ligne : {single_line_groups}")
-    
-    # matching_files_dict = {
-    #     g: [file for file in source_unitaires_dir.glob(f"*{df[df['groupement'] == g]['PRM'].values[0]}*.pdf")][0]
-    #     for g in df['groupement'].unique()
-    #     if len([file for file in source_unitaires_dir.glob(f"*{df[df['groupement'] == g]['PRM'].values[0]}*.pdf")]) > 0
-    # }
-    matching_files_dict = {}
-    for g in df['groupement'].unique():
-        prm_values = df[df['groupement'] == g]['PRM'].values
-        if len(prm_values) > 0:
-            matching_files = list(source_unitaires_dir.glob(f"*{prm_values[0]}*.pdf"))
-            if matching_files:
-                matching_files_dict[g] = matching_files[0]
+    # Detect groups with only one line in df
+    single_line_groups = df.groupby('groupement').filter(lambda x: len(x) == 1)
 
-    for g, f in matching_files_dict.items():
-        ajouter_ligne_regroupement(f, output_dir, f'Regroupement de facturation : ({g})')
+    # Remove 'nan' group if it exists
+    single_line_groups = single_line_groups[single_line_groups['groupement'] != 'nan']
+
+    logger.info(f"Groupes avec une seule ligne : {single_line_groups['groupement'].tolist()}")
+
+    # matching_files_dict = {}
+    for _, row in single_line_groups.iterrows():
+        group = row['groupement']
+        prm = row['PRM']
+        matching_files = list(source_unitaires_dir.glob(f"*{prm}*.pdf"))
+        if matching_files:
+            ajouter_ligne_regroupement(matching_files[0], output_dir, f'Regroupement de facturation : ({group})')
+        else:
+            logger.warning(f"Aucun fichier trouvé pour le pdl {prm} du groupe à pdl unique {group}")
+
+    # for g, f in matching_files_dict.items():
+    #     ajouter_ligne_regroupement(f, output_dir, f'Regroupement de facturation : ({g})')
     
     merged_pdf_files = create_grouped_invoices(df=df, group_dir=group_dir, merge_dir=merge_dir)
 

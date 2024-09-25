@@ -23,7 +23,7 @@ def extraire_polices_pdf(fichier_pdf):
     doc.close()
     return polices
 
-def ajouter_ligne_regroupement(fichier_pdf : Path, texte_regroupement : str, fontname : str="hebo", fontsize : int=11):
+def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, texte_regroupement : str, fontname : str="hebo", fontsize : int=11):
     """
     Ajoute une ligne de regroupement à un fichier PDF existant.
 
@@ -95,8 +95,7 @@ def ajouter_ligne_regroupement(fichier_pdf : Path, texte_regroupement : str, fon
                     
     
     # Sauvegarder le fichier PDF modifié dans un nouveau dossier depuis le même dossier que le dossier d'entrée
-    dossier_entree = Path(fichier_pdf).parent
-    nouveau_dossier = dossier_entree / "groupement_facture_unique"
+    nouveau_dossier = output_dir / "groupement_facture_unique"
     nouveau_dossier.mkdir(parents=True, exist_ok=True)
     nouveau_fichier_pdf = nouveau_dossier / Path(fichier_pdf).name
     doc.save(nouveau_fichier_pdf)
