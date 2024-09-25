@@ -4,7 +4,7 @@ import logging
 from pypdf import PdfReader, PdfWriter, PageObject
 from pypdf.errors import EmptyFileError
 
-from pypdf.generic import ArrayObject, ByteStringObject
+from pypdf.generic import ArrayObject, ByteStringObject, NameObject
 
 import argparse
 from pathlib import Path
@@ -13,7 +13,7 @@ from pandas import DataFrame
 import sys
 import shutil
 import fitz
-
+import copy
 from pdf_utils import ajouter_ligne_regroupement
 from mpl import export_table_as_pdf
 
@@ -33,19 +33,20 @@ logger = logging.getLogger()
 date_pattern = r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})'
 client_name_pattern = r'Nom et Prénom ou\s* Raison Sociale :\s*(.*)'
 pdl_pattern = r'Référence PDL : (\d{14})'
-def copy_metadata(reader: PdfReader, writer: PdfWriter):
+
+def copy_pdf_metadata(reader: PdfReader, writer: PdfWriter):
+    # Copy metadata
     if reader.metadata:
-        metadata = reader.metadata
-        writer.add_metadata({
-            '/Title': metadata.get('/Title', ''),
-            '/Author': metadata.get('/Author', ''),
-            '/Subject': metadata.get('/Subject', ''),
-            '/Keywords': metadata.get('/Keywords', ''),
-            '/Creator': metadata.get('/Creator', ''),
-            '/Producer': metadata.get('/Producer', ''),
-            '/CreationDate': metadata.get('/CreationDate', ''),
-            '/ModDate': metadata.get('/ModDate', '')
-        })
+        writer.add_metadata(reader.metadata)
+
+    # Copy document info
+    if reader._info:
+        for key, value in reader._info.items():
+            writer.add_metadata({key: value})
+
+    # Copy XMP metadata if present
+    if hasattr(reader, 'xmp_metadata') and reader.xmp_metadata:
+        writer.xmp_metadata = reader.xmp_metadata
 
 def extract_group_name(text: str) -> str | None:
     """
@@ -125,6 +126,32 @@ def safe_extract_text(page: PageObject) -> str | None:
         logger.error(f"Erreur lors de l'extraction du texte de la page : {e}")
         return None
 
+def create_writer_with_metadata(reader: PdfReader, pages_to_keep: list[int] = None) -> PdfWriter:
+    """
+    Creates a new PdfWriter and copies specified metadata from the reader.
+
+    Parameters:
+    - reader (PdfReader): The PdfReader object to copy metadata from.
+    - keys_to_copy (List[str], optional): A list of keys to copy from the reader's root object. 
+      Defaults to ["/Metadata", "/OutputIntents", "/Version", "/Extensions"].
+
+    Returns:
+    - PdfWriter: A new PdfWriter with the specified metadata copied.
+    """
+    if pages_to_keep is None:
+        pages_to_keep = []
+
+    writer = PdfWriter(clone_from=reader)
+
+    # Remove pages not in pages_to_keep
+    all_pages = list(range(len(reader.pages)))
+    pages_to_remove = set(all_pages) - set(pages_to_keep)
+
+    for page_num in sorted(pages_to_remove, reverse=True):
+        del writer.pages[page_num]
+
+    return writer
+
 def split_pdf(pdf_file_path: Path, output_dir: Path,  start_keyword: str="www.enargia.eus", regex_dict=None) -> tuple[list[Path], list[Path], Path]:
     """
     Divise un fichier PDF en plusieurs sous-PDF basés sur un mot-clé de début de pdf.
@@ -187,11 +214,7 @@ def split_pdf(pdf_file_path: Path, output_dir: Path,  start_keyword: str="www.en
                         writer.write(output_pdf)
                 writer = None
 
-            # Créer un nouveau writer pour le prochain sous-PDF
-            writer = PdfWriter()
-            #writer.clone_reader_document_root(reader)
-            copy_metadata(reader, writer)
-            writer.add_page(page)
+            writer = create_writer_with_metadata(reader, [i])
 
             # Extract invoice number
             invoice_pattern = r'N° de facture\s*:\s*(\d{14})'
