@@ -9,46 +9,9 @@ from pypdf import PdfReader, PdfWriter, PageObject
 from pypdf.generic import ArrayObject, ByteStringObject
 from pypdf.errors import EmptyFileError
 from pathlib import Path
+from typing import Callable
 
-# Try to import Rich, but have a fallback if it's not available
-try:
-    from rich.progress import Progress, TaskID
-    from rich.console import Console
-    from rich.logging import RichHandler
-    from rich.pretty import pprint
-    from rich.panel import Panel
-    rich_available = True
-except ImportError:
-    rich_available = False
-
-# Custom logger setup
-def setup_logger():
-    """
-    Set up and return a logger, using Rich if available, otherwise using basic logging.
-
-    Returns:
-        logging.Logger: Configured logger object.
-    """
-    if rich_available:
-        logging.basicConfig(
-            level="INFO",
-            format="%(message)s",
-            datefmt="[%X]",
-            handlers=[RichHandler(rich_tracebacks=True)]
-        )
-        logger = logging.getLogger("rich")
-    else:
-        logging.basicConfig(
-            level="INFO",
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            datefmt="[%X]"
-        )
-        logger = logging.getLogger("basic")
-    
-    return logger
-
-# Global logger
-logger = setup_logger()
+logger = logging.getLogger(__name__)
 
 def extract_nested_pdfs(input_path: Path) -> Path:
     """
@@ -245,77 +208,55 @@ def split_pdf(pdf_file_path: Path, output_dir: Path, regex_dict, start_keyword: 
                 
     return group, indiv, []
 
-def split_pdfs(input_dir: Path, output_dir: Path, regex_dict, progress_callback=None) -> tuple[list[Path], list[Path], list[Path]]:
+def process_zipped_pdfs(
+    input_path: Path, 
+    output_dir: Path, 
+    regex_dict: dict[str, str],
+    progress_callback: Callable[[str, int, int], None] | None=None
+) -> tuple[list[str], list[str], list[str]]:
     """
-    Cette fonction divise les fichiers PDF trouvés dans le répertoire d'entrée en fonction des expressions régulières fournies.
-
-    Paramètres:
-    input_dir (Path): Le répertoire contenant les fichiers PDF à traiter.
-    output_dir (Path): Le répertoire où les fichiers PDF divisés seront enregistrés.
-    regex_dict (dict): Un dictionnaire contenant les motifs regex pour extraire les informations nécessaires des PDF.
-
-    Retourne:
-    tuple: Trois listes contenant respectivement les chemins des fichiers PDF de groupe, les chemins des fichiers PDF individuels et les erreurs rencontrées.
-    """
-    pdfs = list(input_dir.rglob('*.pdf'))
-    total_pdfs = len(pdfs)
-    logger.info(f"{total_pdfs} pdfs détectés dans {input_dir}")
-    groups = []
-    indivs = []
-    errors = []
-    for i, pdf in enumerate(pdfs):
-        group, indiv, error = split_pdf(pdf, output_dir, regex_dict=regex_dict)
-        groups += group
-        indivs += indiv
-        errors += error
-        if progress_callback:
-            progress_callback(i + 1, total_pdfs)
-
-    return groups, indivs, errors
-
-def rich_progress_callback(progress: Progress, task: TaskID):
-    """
-    Progress callback for Rich progress bar.
-    """
-    def update(current: int, total: int):
-        progress.update(task, completed=current, total=total)
-    return update
-
-def simple_progress_callback(i: int, total: int):
-    """
-    Simple console progress callback.
-    """
-    logging.info(f'Traitement des PDF : {i}/{total} ({i/total:.1%})')
-
-def process_and_split_pdfs(input_path: Path, output_dir: Path, regex_dict):
-    """
-    Extract PDFs from nested zip files, process them, and clean up.
+    Extract PDFs from nested zip files to tmp directory, process them, and clean up.
 
     Args:
         input_path (Path): Path to the input zip file or directory.
         output_dir (Path): Path to the output directory.
         regex_dict (dict): Dictionary of regex patterns.
+        progress_callback (Optional[Callable]): Function to call with progress updates.
 
     Returns:
         tuple: Lists of group PDFs, individual PDFs, and errors.
     """
-    logger.info(f"Starting to process input from {input_path}")
+    def update_progress(task: str, current: int, total: int):
+        if progress_callback:
+            progress_callback(task, current, total)
+    update_progress("Extracting PDFs", 0, 1)
     temp_dir = extract_nested_pdfs(input_path)
-    
+    groups = []
+    indivs = []
+    errors = []
     try:
-        if rich_available:
-            with Progress() as progress:
-                task = progress.add_task("[green]Traitement des PDF...", total=None)
-                callback = rich_progress_callback(progress, task)
-                return split_pdfs(temp_dir, output_dir, regex_dict, callback)
-        else:
-            return split_pdfs(temp_dir, output_dir, regex_dict, simple_progress_callback)
+        pdf_files = list(temp_dir.glob('**/*.pdf'))
+        total_pdfs = len(pdf_files)
+
+        for i, pdf in enumerate(pdf_files, 1):
+            group, indiv, error = split_pdf(pdf, output_dir, regex_dict=regex_dict)
+            groups += group
+            indivs += indiv
+            errors += error
+            update_progress("Processing PDFs", i, total_pdfs)
+
+        return groups, indivs, errors
     finally:
+        update_progress("Cleanup", 0, 0)
         shutil.rmtree(temp_dir)  # Clean up temp directory
-        logger.info("Temporary directory cleaned up")
 
 def main():
     import argparse
+    from rich.live import Live
+    from rich.panel import Panel
+    from rich.layout import Layout
+    from rich.console import Console
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
     parser = argparse.ArgumentParser(description="Split PDF files based on specific patterns.")
     parser.add_argument('-i', '--input', type=str, required=True, help="Input ZIP file containing PDF files")
@@ -333,22 +274,68 @@ def main():
         'pdl': r'Référence PDL : (\d{14})',
         'invoice_id': r'N° de facture\s*:\s*(\d{14})'
     }
+    
+    def text_progress_handler(task: str, current: int, total: int):
+        if task == "Extracting PDFs":
+            print("Extraction complete")
+        elif task == "Processing PDFs":
+            print(f"Processing PDF {current}/{total}")
+        elif task == "Cleanup":
+            print("Cleanup complete")
+
+
     console = Console()
-    groups, indivs, errors = process_and_split_pdfs(input_zip, output_dir, regex_dict)
-    console.print(Panel.fit(
-        f"[green]Processing complete![/green]\n"
-        f"Group PDFs: {len(groups)}\n"
-        f"Individual PDFs: {len(indivs)}\n"
-        f"Errors: {len(errors)}",
-        title="Results",
-        border_style="bold"
-    ))
 
-    if errors:
-        console.print("[yellow]The following files encountered errors:[/yellow]")
-        for error in errors:
-            console.print(f"  - {error}")
+    def create_progress_handler():
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console,
+        )
+        extract_task = None
+        process_task = None
 
+        def progress_handler(task: str, current: int, total: int):
+            nonlocal extract_task, process_task
+
+            if task == "Extracting PDFs":
+                console.print("[green]Extracting PDFs")
+            elif task == "Processing PDFs":
+                if current == 1:  # Start a new progress bar for processing
+                    process_task = progress.add_task("[green]Processing PDFs", total=total)
+                    progress.start()
+                if process_task is not None:
+                    progress.update(process_task, completed=current)
+                if current == total:
+                    progress.stop()
+            elif task == "Cleanup":
+                console.print("[green]Cleanup complete")
+
+        return progress_handler
+
+    # Use the progress handler in your main code
+    progress_handler = create_progress_handler()
+    group_pdfs, individual_pdfs, errors = process_zipped_pdfs(
+        input_zip, output_dir, regex_dict, progress_callback=progress_handler
+    )
+        # Create a panel with the resulting information
+    result_panel = Panel(
+        f"""
+        [bold green]Processing Results:[/bold green]
+        Output Directory: {output_dir}
+        Number of Group PDFs: {len(group_pdfs)}
+        Number of Individual PDFs: {len(individual_pdfs)}
+        Number of Errors: {len(errors)}
+        """,
+        title="Summary",
+        # expand=False,
+        # border_style="green",
+    )
+
+    # Display the panel
+    console.print(result_panel)
 if __name__ == "__main__":
     main()
 
