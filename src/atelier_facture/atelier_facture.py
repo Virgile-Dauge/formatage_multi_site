@@ -17,6 +17,8 @@ import copy
 from pdf_utils import ajouter_ligne_regroupement
 from mpl import export_table_as_pdf
 
+from atelier_facture import process_zipped_pdfs
+
 from rich.logging import RichHandler
 from rich.pretty import pprint
 
