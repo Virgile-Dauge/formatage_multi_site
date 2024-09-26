@@ -84,7 +84,7 @@ def extract_group_name(text: str) -> str | None:
         return text[start:end-1].strip().replace('\n', ' ')
     return None
 
-def split_pdf(pdf_file_path: Path, output_dir: Path, regex_dict, start_keyword: str="www.enargia.eus", ) -> tuple[list[Path], list[Path], Path]:
+def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path, regex_dict, start_keyword: str="www.enargia.eus", ) -> tuple[list[Path], list[Path], Path]:
     """
     Divise un fichier PDF en plusieurs sous-PDF basés sur un mot-clé de début de pdf.
 
@@ -117,10 +117,10 @@ def split_pdf(pdf_file_path: Path, output_dir: Path, regex_dict, start_keyword: 
             return
         
         if group_name and date and client_name:
-            output_pdf_path = output_dir / 'group' / f"{date}-{client_name} - {group_name}.pdf"
+            output_pdf_path = group_dir / f"{date}-{client_name} - {group_name}.pdf"
             group.append(output_pdf_path)
         elif pdl_name and date and client_name:
-            output_pdf_path = output_dir / 'indiv' / f"{date}-{client_name} - {pdl_name}.pdf"
+            output_pdf_path = indiv_dir / f"{date}-{client_name} - {pdl_name}.pdf"
             indiv.append(output_pdf_path)
         else:
             logger.warning(f"Unable to categorize PDF. date: {date}, client_name: {client_name}, group_name: {group_name}, pdl_name: {pdl_name}")
@@ -152,8 +152,8 @@ def split_pdf(pdf_file_path: Path, output_dir: Path, regex_dict, start_keyword: 
     pdl_name = None
     
     # Créer les répertoires de sortie s'ils n'existent pas
-    (output_dir / 'group').mkdir(exist_ok=True, parents=True)
-    (output_dir / 'indiv').mkdir(exist_ok=True, parents=True)
+    indiv_dir.mkdir(exist_ok=True, parents=True)
+    group_dir.mkdir(exist_ok=True, parents=True)
 
     for i in range(num_pages):
         page = reader.pages[i]
@@ -210,7 +210,8 @@ def split_pdf(pdf_file_path: Path, output_dir: Path, regex_dict, start_keyword: 
 
 def process_zipped_pdfs(
     input_path: Path, 
-    output_dir: Path, 
+    indiv_dir: Path,
+    group_dir: Path, 
     regex_dict: dict[str, str],
     progress_callback: Callable[[str, int, int], None] | None=None
 ) -> tuple[list[str], list[str], list[str]]:
@@ -219,7 +220,8 @@ def process_zipped_pdfs(
 
     Args:
         input_path (Path): Path to the input zip file or directory.
-        output_dir (Path): Path to the output directory.
+        indiv_dir (Path): Path to to put individual invoices.
+        group_dir (Path): Path to to put grouped invoices.
         regex_dict (dict): Dictionary of regex patterns.
         progress_callback (Optional[Callable]): Function to call with progress updates.
 
@@ -239,7 +241,7 @@ def process_zipped_pdfs(
         total_pdfs = len(pdf_files)
 
         for i, pdf in enumerate(pdf_files, 1):
-            group, indiv, error = split_pdf(pdf, output_dir, regex_dict=regex_dict)
+            group, indiv, error = split_pdf(pdf, indiv_dir, group_dir, regex_dict=regex_dict)
             groups += group
             indivs += indiv
             errors += error
@@ -252,6 +254,7 @@ def process_zipped_pdfs(
 
 def main():
     import argparse
+    from rich.tree import Tree
     from rich.live import Live
     from rich.panel import Panel
     from rich.layout import Layout
@@ -260,12 +263,12 @@ def main():
 
     parser = argparse.ArgumentParser(description="Split PDF files based on specific patterns.")
     parser.add_argument('-i', '--input', type=str, required=True, help="Input ZIP file containing PDF files")
-    parser.add_argument('-o', '--output', type=str, required=True, help="Output directory for split PDF files")
+    parser.add_argument('-w', '--workspace', type=str, required=True, help="Output workspace directory for split PDF files")
     args = parser.parse_args()
     input_zip = Path(args.input)
-    output_dir = Path(args.output)
+    workspace_dir = Path(args.workspace)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    workspace_dir.mkdir(parents=True, exist_ok=True)
 
     regex_dict = {
         'date': r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})',
@@ -314,17 +317,18 @@ def main():
                 console.print("[green]Cleanup complete")
 
         return progress_handler
-
+    indiv_dir = workspace_dir / 'indiv'
+    group_dir = workspace_dir / input_zip.stem
     # Use the progress handler in your main code
     progress_handler = create_progress_handler()
     group_pdfs, individual_pdfs, errors = process_zipped_pdfs(
-        input_zip, output_dir, regex_dict, progress_callback=progress_handler
+        input_zip, indiv_dir, group_dir, regex_dict, progress_callback=progress_handler
     )
         # Create a panel with the resulting information
     result_panel = Panel(
         f"""
         [bold green]Processing Results:[/bold green]
-        Output Directory: {output_dir}
+        Workspace Directory: {workspace_dir}
         Number of Group PDFs: {len(group_pdfs)}
         Number of Individual PDFs: {len(individual_pdfs)}
         Number of Errors: {len(errors)}
@@ -336,6 +340,30 @@ def main():
 
     # Display the panel
     console.print(result_panel)
+    def display_directory(directory: Path, max_items=5):
+        console = Console(width=100, color_system="auto")
+        tree = Tree(
+            f"[bold magenta]:file_folder: {directory.name}",
+            guide_style="bold bright_blue",
+        )
+
+        def add_directory(tree, directory):
+            paths = sorted(directory.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))
+            for path in paths[:max_items]:
+                if path.is_dir():
+                    branch = tree.add(f"[bold yellow]:file_folder: {path.name}")
+                    add_directory(branch, path)
+                else:
+                    tree.add(f"[bold green]:page_facing_up: {path.name}")
+            
+            if len(paths) > max_items:
+                tree.add(f"[bold red]... and {len(paths) - max_items} more items")
+
+        add_directory(tree, directory)
+        
+        console.print("\n[bold blue]Directory Structure:[/bold blue]")
+        console.print(tree)
+    display_directory(workspace_dir)
 if __name__ == "__main__":
     main()
 
