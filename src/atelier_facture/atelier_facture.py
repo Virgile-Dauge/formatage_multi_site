@@ -109,23 +109,18 @@ def main():
                 batch_dir = atelier_dir / zip_path.stem
                 batch_dir.mkdir(exist_ok=True)
                 console.print(Panel.fit(f"Traitement commencé pour [bold]{zip_path}[/bold]", style="green"))
-                group_pdfs, individual_pdfs, errors, meta = process_with_rich_progress(zip_path, indiv_dir, batch_dir, regex_dict, console)
+                group_pdfs, individual_pdfs, errors = process_with_rich_progress(zip_path, indiv_dir, batch_dir, regex_dict, console)
+                
                 result_panel = Panel(
                     f"""
                     [bold green]Processing Results:[/bold green]
                     Number of Group PDFs: {len(group_pdfs)}
                     Number of Individual PDFs: {len(individual_pdfs)}
                     Number of Errors: {len(errors)}
-                    Meta file saved to: {csv_path}
+
                     """,
                     title=f"Données extraites de {zip_path.name}",
                 )
-
-                # Create the full path for the CSV file
-                csv_path = batch_dir / 'meta.csv'
-
-                # Save the DataFrame to CSV
-                meta.to_csv(csv_path, index=False)
 
                 console.print(result_panel)
 

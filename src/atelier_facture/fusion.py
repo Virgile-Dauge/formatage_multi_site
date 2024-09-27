@@ -273,6 +273,6 @@ def create_grouped_single_invoice(df: DataFrame, indiv_dir: Path, group_dir: Pat
         prm = row['PRM']
         matching_files = list(indiv_dir.glob(f"*{prm}*.pdf"))
         if matching_files:
-            ajouter_ligne_regroupement(matching_files[0], indiv_dir, f'Regroupement de facturation : ({group})')
+            ajouter_ligne_regroupement(matching_files[0], indiv_dir, group)
         else:
             logger.warning(f"Aucun fichier trouvé pour le pdl {prm} du groupe à pdl unique {group}")
