@@ -23,7 +23,7 @@ def extraire_polices_pdf(fichier_pdf):
     doc.close()
     return polices
 
-def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, texte_regroupement : str, fontname : str="hebo", fontsize : int=11):
+def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name : str, fontname : str="hebo", fontsize : int=11):
     """
     Ajoute une ligne de regroupement à un fichier PDF existant.
 
@@ -71,6 +71,7 @@ def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, texte_regro
             lignes.append(texte_regroupement)
         return lignes
     
+    texte_regroupement = f'Regroupement de facturation : ({group_name})'
     lignes = obtenir_lignes_regroupement(texte_regroupement, fontname, fontsize, max_largeur=290)
     # Ouvrir le fichier PDF
     doc = fitz.open(fichier_pdf)
@@ -93,7 +94,11 @@ def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, texte_regro
             for i, l in enumerate(lignes):
                 page.insert_text((rect.x0, rect.y0 + interligne*(2 + i)), l, fontsize=fontsize, fontname=fontname, color=(0, 0, 0))
                     
-    
+    # Read metadata
+    metadata = doc.metadata
+
+    metadata['keywords'] = str(group_name)
+    doc.set_metadata(metadata)
     # Sauvegarder le fichier PDF modifié dans un nouveau dossier depuis le même dossier que le dossier d'entrée
     nouveau_dossier = output_dir / "groupement_facture_unique"
     nouveau_dossier.mkdir(parents=True, exist_ok=True)
