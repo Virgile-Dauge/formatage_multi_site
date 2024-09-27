@@ -6,7 +6,6 @@ import argparse
 from pathlib import Path
 import pandas as pd
 from pandas import DataFrame
-import shutil
 import fitz
 
 from rich.console import Console
@@ -70,7 +69,7 @@ def check_missing_pdl(df: DataFrame, pdl_dir: Path) -> set[str]:
 def main():
     parser = argparse.ArgumentParser(description="Traitement des factures")
     parser.add_argument("atelier_path", type=str, help="Chemin du répertoire atelier")
-    parser.add_argument("-i", "--input_zip", type=str, help="Chemin vers le fichier zip d'entrée.")
+    parser.add_argument("-i", "--input", type=str, help="Chemin vers le fichier zip d'entrée, ou le dossier de zips d'entrée.")
     parser.add_argument("-ff", "--forcer_fusion", action="store_true", help="Forcer la fusion des factures même si le dossier existe déjà")
     parser.add_argument("-fz", "--forcer_zip", action="store_true", help="Forcer la création du zip même si le dossier existe déjà")
     args = parser.parse_args()
@@ -86,39 +85,43 @@ def main():
     indiv_dir = atelier_dir / "indiv"
     indiv_dir.mkdir(exist_ok=True)
     # =======================Étape 1: Traitement du zip d'entrée=======================
-    console.print(Panel.fit("Étape 1: Traitement du zip d'entrée", style="bold magenta"))
-    if args.input_zip:
-        zip_path = Path(args.input_zip)
-        
-        batch_dir = atelier_dir / zip_path.stem
-        batch_dir.mkdir(exist_ok=True)
-        regex_dict = {
-            'date': r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})',
-            'client_name': r'Nom et Prénom ou\s* Raison Sociale :\s*(.*)',
-            'group_name': r'Regroupement de facturation\s*:\s*\((.*?)\)',
-            'pdl': r'Référence PDL : (\d{14})',
-            'invoice_id': r'N° de facture\s*:\s*(\d{14})'
-        }
+    console.print(Panel.fit("Étape 1: Traitement des entrées", style="bold magenta"))
+    regex_dict = {
+                'date': r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})',
+                'client_name': r'Nom et Prénom ou\s* Raison Sociale :\s*(.*)',
+                'group_name': r'Regroupement de facturation\s*:\s*\((.*?)\)',
+                'pdl': r'Référence PDL : (\d{14})',
+                'invoice_id': r'N° de facture\s*:\s*(\d{14})'
+            }
+    input_path = Path(args.input)
+    zip_list = []
 
-        group_pdfs, individual_pdfs, errors = process_with_rich_progress(zip_path, indiv_dir, batch_dir, regex_dict, console)
-        #group_pdfs, individual_pdfs, errors = process_zipped_pdfs(zip_path, indiv_dir, batch_dir, regex_dict)
-        console.print(f"Traitement terminé pour [bold]{zip_path}[/bold]", style="green")
-        result_panel = Panel(
-            f"""
-            [bold green]Processing Results:[/bold green]
-            Number of Group PDFs: {len(group_pdfs)}
-            Number of Individual PDFs: {len(individual_pdfs)}
-            Number of Errors: {len(errors)}
-            """,
-            title="Données extraites",
-            # expand=False,
-            # border_style="green",
-        )
+    if input_path.is_file() and input_path.suffix == '.zip':
+        zip_list = [input_path]
+    elif input_path.is_dir():
+        zip_list = list(input_path.glob('*.zip'))
 
-        # Display the panel
-        console.print(result_panel)
+    if not zip_list:
+        console.print("Aucun fichier zip trouvé. Étape ignorée.", style="yellow")
     else:
-        console.print("Aucun fichier d'entrée spécifié. Étape ignorée.", style="yellow")
+        for zip_path in zip_list:
+            batch_dir = atelier_dir / zip_path.stem
+            batch_dir.mkdir(exist_ok=True)
+            console.print(Panel.fit(f"Traitement commencé pour [bold]{zip_path}[/bold]", style="green"))
+            group_pdfs, individual_pdfs, errors = process_with_rich_progress(zip_path, indiv_dir, batch_dir, regex_dict, console)
+            result_panel = Panel(
+                f"""
+                [bold green]Processing Results:[/bold green]
+                Number of Group PDFs: {len(group_pdfs)}
+                Number of Individual PDFs: {len(individual_pdfs)}
+                Number of Errors: {len(errors)}
+                """,
+                title=f"Données extraites de {zip_path.name}",
+            )
+
+            console.print(result_panel)
+
+    console.print(f"Traitement de tous les fichiers zip terminé.", style="bold green")
 
 
     # =======================Étape 2: Liste des dossiers dans l'atelier================
