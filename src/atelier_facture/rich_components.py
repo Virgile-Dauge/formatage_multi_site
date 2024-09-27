@@ -58,8 +58,10 @@ def process_with_rich_progress(zip_path: Path, indiv_dir: Path, batch_dir: Path,
                     # Task completed
                     progress.update(task_id, completed=1, description=f"[bold green]{task}: {details} (Done)")
             else:
-                # Update progress bar task
-                progress.update(task_id, completed=current, description=f"[cyan]{task}: {details}")
+                if current < total:
+                    progress.update(task_id, completed=current, description=f"[cyan]{task}: {details}")
+                else :
+                    progress.update(task_id, completed=current, description=f"[bold green]{task}: (Done)")
 
             # Force a refresh of the display
             progress.refresh()
