@@ -9,7 +9,8 @@ from pypdf import PdfReader, PdfWriter, PageObject
 from pypdf.generic import ArrayObject, ByteStringObject
 from pypdf.errors import EmptyFileError
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Any
+from pandas import DataFrame
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,8 @@ def extract_group_name(text: str) -> str | None:
         return text[start:end-1].strip().replace('\n', ' ')
     return None
 
-def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path, regex_dict, start_keyword: str="www.enargia.eus", ) -> tuple[list[Path], list[Path], Path]:
+def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path, 
+              regex_dict, start_keyword: str="www.enargia.eus", ) -> tuple[list[Path], list[Path], list[Path], list[dict[str, str]]]:
     """
     Divise un fichier PDF en plusieurs sous-PDF basés sur un mot-clé de début de pdf.
 
@@ -139,6 +141,7 @@ def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path, regex_dict,
 
     indiv = []
     group = []
+    meta = []
     
     # Ouvrir le fichier PDF
     try:
@@ -148,7 +151,7 @@ def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path, regex_dict,
         return group, indiv, [pdf_file_path]
     
     
-    def save_current_pdf() -> None:
+    def save_current_pdf() -> dict[str, str]:
         nonlocal writer, group, indiv
         if not writer:
             return
@@ -166,7 +169,8 @@ def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path, regex_dict,
         with open(output_pdf_path, "wb") as output_pdf:
             writer.write(output_pdf)
         
-        writer = None    
+        writer = None
+        return {'date': date, 'client_name': client_name, 'group_name': group_name, 'pdl_name': pdl_name, 'pdf': output_pdf_path}    
     def safe_extract_text(page: PageObject) -> str | None:
         """
         Extrait le texte d'une page PDF de manière sécurisée.
@@ -202,7 +206,7 @@ def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path, regex_dict,
         # Rechercher le mot-clé indiquant le début d'un nouveau sous-PDF
         if start_keyword in text:
             if writer:
-                save_current_pdf()
+                meta += [save_current_pdf()]
 
             writer = PdfWriter()
             writer.add_page(page)
@@ -227,7 +231,7 @@ def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path, regex_dict,
             # Extraire le nom du client
             client_name_match = re.search(regex_dict['client_name'], text)
             if client_name_match:
-                client_name = client_name_match.group(1).strip().replace(" ", "_")  # Remplace les espaces par "_"
+                client_name = client_name_match.group(1).strip().replace(" ", "_")
 
             # Extraire le nom du groupement
             group_name = extract_group_name(text)
@@ -241,9 +245,9 @@ def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path, regex_dict,
             writer.add_page(page)
 
     # Enregistrer le dernier PDF
-    save_current_pdf()
+    meta += [save_current_pdf()]
                 
-    return group, indiv, []
+    return group, indiv, [], meta
 
 def process_zipped_pdfs(
     input_path: Path, 
@@ -251,7 +255,7 @@ def process_zipped_pdfs(
     group_dir: Path, 
     regex_dict: dict[str, str],
     progress_callback: Callable[[str, int, int, str], None] | None=None
-) -> tuple[list[str], list[str], list[str]]:
+) -> tuple[list[str], list[str], list[str], DataFrame]:
     """
     Extract PDFs from nested zip files to tmp directory, process them, and clean up.
 
@@ -278,19 +282,21 @@ def process_zipped_pdfs(
     groups = []
     indivs = []
     errors = []
+    metas = []
     try:
         pdf_files = list(temp_dir.glob('**/*.pdf'))
         total_pdfs = len(pdf_files)
 
         for i, pdf in enumerate(pdf_files, 1):
             update_progress("Processing PDFs", i, total_pdfs, pdf)
-            group, indiv, error = split_pdf(pdf, indiv_dir, group_dir, regex_dict=regex_dict)
+            group, indiv, error, meta = split_pdf(pdf, indiv_dir, group_dir, regex_dict=regex_dict)
             groups += group
             indivs += indiv
             errors += error
+            metas += meta
             
 
-        return groups, indivs, errors
+        return groups, indivs, errors, DataFrame(metas)
     finally:
         shutil.rmtree(temp_dir)  # Clean up temp directory
 
