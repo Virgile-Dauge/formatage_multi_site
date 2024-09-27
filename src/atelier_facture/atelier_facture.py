@@ -14,7 +14,7 @@ from rich.logging import RichHandler
 
 # local imports
 from rich_components import process_with_rich_progress, rich_status_table, rich_directory_tree 
-from fusion import create_grouped_invoices
+from fusion import create_grouped_invoices, create_grouped_single_invoice
 # Configuration du logger pour utiliser Rich
 logging.basicConfig(
     level=logging.INFO,
@@ -93,35 +93,44 @@ def main():
                 'pdl': r'Référence PDL : (\d{14})',
                 'invoice_id': r'N° de facture\s*:\s*(\d{14})'
             }
-    input_path = Path(args.input)
-    zip_list = []
 
-    if input_path.is_file() and input_path.suffix == '.zip':
-        zip_list = [input_path]
-    elif input_path.is_dir():
-        zip_list = list(input_path.glob('*.zip'))
+    if args.input:
+        input_path = Path(args.input)
+        zip_list = []
+        if input_path.is_file() and input_path.suffix == '.zip':
+            zip_list = [input_path]
+        elif input_path.is_dir():
+            zip_list = list(input_path.glob('*.zip'))
 
-    if not zip_list:
-        console.print("Aucun fichier zip trouvé. Étape ignorée.", style="yellow")
-    else:
-        for zip_path in zip_list:
-            batch_dir = atelier_dir / zip_path.stem
-            batch_dir.mkdir(exist_ok=True)
-            console.print(Panel.fit(f"Traitement commencé pour [bold]{zip_path}[/bold]", style="green"))
-            group_pdfs, individual_pdfs, errors = process_with_rich_progress(zip_path, indiv_dir, batch_dir, regex_dict, console)
-            result_panel = Panel(
-                f"""
-                [bold green]Processing Results:[/bold green]
-                Number of Group PDFs: {len(group_pdfs)}
-                Number of Individual PDFs: {len(individual_pdfs)}
-                Number of Errors: {len(errors)}
-                """,
-                title=f"Données extraites de {zip_path.name}",
-            )
+        if not zip_list:
+            console.print("Aucun fichier zip trouvé. Étape ignorée.", style="yellow")
+        else:
+            for zip_path in zip_list:
+                batch_dir = atelier_dir / zip_path.stem
+                batch_dir.mkdir(exist_ok=True)
+                console.print(Panel.fit(f"Traitement commencé pour [bold]{zip_path}[/bold]", style="green"))
+                group_pdfs, individual_pdfs, errors, meta = process_with_rich_progress(zip_path, indiv_dir, batch_dir, regex_dict, console)
+                result_panel = Panel(
+                    f"""
+                    [bold green]Processing Results:[/bold green]
+                    Number of Group PDFs: {len(group_pdfs)}
+                    Number of Individual PDFs: {len(individual_pdfs)}
+                    Number of Errors: {len(errors)}
+                    Meta file saved to: {csv_path}
+                    """,
+                    title=f"Données extraites de {zip_path.name}",
+                )
 
-            console.print(result_panel)
+                # Create the full path for the CSV file
+                csv_path = batch_dir / 'meta.csv'
 
-    console.print(f"Traitement de tous les fichiers zip terminé.", style="bold green")
+                # Save the DataFrame to CSV
+                meta.to_csv(csv_path, index=False)
+
+                console.print(result_panel)
+
+
+    #console.print(f"Traitement de tous les fichiers zip terminé.", style="bold green")
 
 
     # =======================Étape 2: Liste des dossiers dans l'atelier================
@@ -148,6 +157,8 @@ def main():
                 # Remplacer les tirets moyens par des tirets courts
                 df = df.replace('–', '-', regex=True)
                 merged_pdf_files = create_grouped_invoices(df=df, indiv_dir=indiv_dir, group_dir=subdir, merge_dir=subdir / 'fusion')
+
+                create_grouped_single_invoice(df=df, indiv_dir=indiv_dir, group_dir=subdir, merge_dir=subdir / 'fusion')
                 compress_pdfs(merged_pdf_files, factures_groupees_dir)
                 console.print(f"Fusion des factures pour [bold]{subdir.name}[/bold]", style="green")
             else:

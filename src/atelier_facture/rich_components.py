@@ -66,13 +66,11 @@ def process_with_rich_progress(zip_path: Path, indiv_dir: Path, batch_dir: Path,
             # Force a refresh of the display
             progress.refresh()
 
-        console.print("Starting PDF processing...")
-        group_pdfs, individual_pdfs, errors = process_zipped_pdfs(
+        group_pdfs, individual_pdfs, errors, meta = process_zipped_pdfs(
             zip_path, indiv_dir, batch_dir, regex_dict, progress_callback=update_progress
         )
-        console.print("PDF processing completed.")
     
-    return group_pdfs, individual_pdfs, errors
+    return group_pdfs, individual_pdfs, errors, meta
 
 def rich_directory_tree(directory: Path, max_items:int=5) -> Tree:
         console = Console(width=100, color_system="auto")

@@ -8,6 +8,7 @@ from pandas import DataFrame
 from pypdf import PdfWriter
 
 from mpl import export_table_as_pdf
+from pdf_utils import ajouter_ligne_regroupement
 import logging
 from rich.logging import RichHandler
 # Configuration du logger pour utiliser Rich
@@ -259,3 +260,19 @@ def create_grouped_invoices(df: DataFrame, indiv_dir: Path, group_dir: Path, mer
 
 def normalize(string: str) -> str:
     return str(string).replace(" ", "").replace("-", "").lower()
+
+def create_grouped_single_invoice(df: DataFrame, indiv_dir: Path, group_dir: Path, merge_dir: Path) -> Path:
+    # Detect groups with only one line in df
+    single_line_groups = df.groupby('groupement').filter(lambda x: len(x) == 1)
+    # Remove 'nan' group if it exists
+    single_line_groups = single_line_groups[single_line_groups['groupement'] != 'nan']
+    logger.info(f"Groupes avec une seule ligne : {single_line_groups['groupement'].tolist()}")
+    for _, row in single_line_groups.iterrows():
+        #print(row)
+        group = row['groupement']
+        prm = row['PRM']
+        matching_files = list(indiv_dir.glob(f"*{prm}*.pdf"))
+        if matching_files:
+            ajouter_ligne_regroupement(matching_files[0], indiv_dir, f'Regroupement de facturation : ({group})')
+        else:
+            logger.warning(f"Aucun fichier trouvé pour le pdl {prm} du groupe à pdl unique {group}")
