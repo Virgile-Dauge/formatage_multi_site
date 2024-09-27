@@ -123,7 +123,7 @@ def extract_group_name(text: str) -> str | None:
     return None
 
 def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path, 
-              regex_dict, start_keyword: str="www.enargia.eus", ) -> tuple[list[Path], list[Path], list[Path], list[dict[str, str]]]:
+              regex_dict, start_keyword: str="www.enargia.eus", ) -> tuple[list[Path], list[Path], list[Path]]:
     """
     Divise un fichier PDF en plusieurs sous-PDF basés sur un mot-clé de début de pdf.
 
@@ -151,7 +151,7 @@ def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path,
         return group, indiv, [pdf_file_path]
     
     
-    def save_current_pdf() -> dict[str, str]:
+    def save_current_pdf():
         nonlocal writer, group, indiv
         if not writer:
             return
@@ -165,12 +165,20 @@ def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path,
         else:
             logger.warning(f"Unable to categorize PDF. date: {date}, client_name: {client_name}, group_name: {group_name}, pdl_name: {pdl_name}")
             return
-        
+        metadata = {
+            '/Title': f"Facture pour {client_name}",
+            '/ClientName': client_name,
+            '/Date': date,
+            '/Application': 'atelier-facture',
+            '/Keywords': group_name,  # Standard field for group name
+            '/PDL': pdl_name,
+            '/InvoiceID': invoice_id,
+        }
+        writer.add_metadata(metadata)
         with open(output_pdf_path, "wb") as output_pdf:
             writer.write(output_pdf)
         
-        writer = None
-        return {'date': date, 'client_name': client_name, 'group_name': group_name, 'pdl_name': pdl_name, 'pdf': output_pdf_path}    
+        writer = None   
     def safe_extract_text(page: PageObject) -> str | None:
         """
         Extrait le texte d'une page PDF de manière sécurisée.
@@ -206,7 +214,7 @@ def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path,
         # Rechercher le mot-clé indiquant le début d'un nouveau sous-PDF
         if start_keyword in text:
             if writer:
-                meta += [save_current_pdf()]
+                save_current_pdf()  
 
             writer = PdfWriter()
             writer.add_page(page)
@@ -214,9 +222,9 @@ def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path,
             # Extract invoice number
             invoice_match = re.search(regex_dict['invoice_id'], text)
             if invoice_match:
-                invoice_number = invoice_match.group(1)
+                invoice_id = invoice_match.group(1)
                 # Convert invoice number to bytes and pad or truncate to 16 bytes
-                id_bytes = invoice_number.encode('utf-8')[:16].ljust(16, b'\0')
+                id_bytes = invoice_id.encode('utf-8')[:16].ljust(16, b'\0')
                 # Create PdfObject for ID
                 id_object = ByteStringObject(id_bytes)
                 writer._ID = ArrayObject([id_object, id_object])  # Use the same value for both array elements
@@ -245,9 +253,8 @@ def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path,
             writer.add_page(page)
 
     # Enregistrer le dernier PDF
-    meta += [save_current_pdf()]
-                
-    return group, indiv, [], meta
+    save_current_pdf()              
+    return group, indiv, []
 
 def process_zipped_pdfs(
     input_path: Path, 
@@ -282,21 +289,19 @@ def process_zipped_pdfs(
     groups = []
     indivs = []
     errors = []
-    metas = []
+
     try:
         pdf_files = list(temp_dir.glob('**/*.pdf'))
         total_pdfs = len(pdf_files)
 
         for i, pdf in enumerate(pdf_files, 1):
             update_progress("Processing PDFs", i, total_pdfs, pdf)
-            group, indiv, error, meta = split_pdf(pdf, indiv_dir, group_dir, regex_dict=regex_dict)
+            group, indiv, error = split_pdf(pdf, indiv_dir, group_dir, regex_dict=regex_dict)
             groups += group
             indivs += indiv
             errors += error
-            metas += meta
-            
 
-        return groups, indivs, errors, DataFrame(metas)
+        return groups, indivs, errors
     finally:
         shutil.rmtree(temp_dir)  # Clean up temp directory
 
