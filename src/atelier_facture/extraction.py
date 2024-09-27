@@ -50,6 +50,43 @@ def extract_nested_pdfs(input_path: Path) -> Path:
 
     return temp_dir
 
+def extract_root_level_csv_xlsx(
+    input_path: Path,
+    csv_dir: Path,
+    xlsx_dir: Path
+) -> tuple[list[str], list[str]]:
+    """
+    Extract root-level CSV and XLSX files from a ZIP file.
+
+    Args:
+        input_path (Path): Path to the input ZIP file.
+        csv_dir (Path): Directory to save extracted CSV files.
+        xlsx_dir (Path): Directory to save extracted XLSX files.
+
+    Returns:
+        Tuple[List[str], List[str]]: Lists of extracted CSV and XLSX file paths.
+    """
+    csvs = []
+    xlsxs = []
+
+    if not zipfile.is_zipfile(input_path):
+        return csvs, xlsxs
+    
+    # Create output directories if they don't exist
+    csv_dir.mkdir(parents=True, exist_ok=True)
+    xlsx_dir.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(input_path, 'r') as zip_ref:
+        for file in zip_ref.namelist():
+            if file.endswith('.csv') and '/' not in file:
+                zip_ref.extract(file, csv_dir)
+                csvs.append(str(csv_dir / file))
+            elif file.endswith('.xlsx') and '/' not in file:
+                zip_ref.extract(file, xlsx_dir)
+                xlsxs.append(str(xlsx_dir / file))
+
+    return csvs, xlsxs
+
 def extract_group_name(text: str) -> str | None:
     """
     Extrait le nom du groupe à partir d'un texte donné en recherchant une expression spécifique.
@@ -213,7 +250,7 @@ def process_zipped_pdfs(
     indiv_dir: Path,
     group_dir: Path, 
     regex_dict: dict[str, str],
-    progress_callback: Callable[[str, int, int], None] | None=None
+    progress_callback: Callable[[str, int, int, str], None] | None=None
 ) -> tuple[list[str], list[str], list[str]]:
     """
     Extract PDFs from nested zip files to tmp directory, process them, and clean up.
@@ -228,11 +265,16 @@ def process_zipped_pdfs(
     Returns:
         tuple: Lists of group PDFs, individual PDFs, and errors.
     """
-    def update_progress(task: str, current: int, total: int):
+    def update_progress(task: str, current: int, total: int, detail: str=''):
         if progress_callback:
-            progress_callback(task, current, total)
-    update_progress("Extracting PDFs", 0, 1)
+            progress_callback(task, current, total, detail)
+    
+    update_progress("Extracting PDFs", 0, 1, "Starting extraction")
     temp_dir = extract_nested_pdfs(input_path)
+    update_progress("Extracting PDFs", 1, 1, "Extraction complete")
+    update_progress("Extracting csv and xlsx", 0, 1, "Starting extraction")
+    extract_root_level_csv_xlsx(input_path, group_dir / 'factures_groupees', group_dir)
+    update_progress("Extracting csv and xlsx", 1, 1, "Extraction complete")
     groups = []
     indivs = []
     errors = []
@@ -241,11 +283,12 @@ def process_zipped_pdfs(
         total_pdfs = len(pdf_files)
 
         for i, pdf in enumerate(pdf_files, 1):
+            update_progress("Processing PDFs", i, total_pdfs, pdf)
             group, indiv, error = split_pdf(pdf, indiv_dir, group_dir, regex_dict=regex_dict)
             groups += group
             indivs += indiv
             errors += error
-            update_progress("Processing PDFs", i, total_pdfs)
+            
 
         return groups, indivs, errors
     finally:
@@ -340,30 +383,6 @@ def main():
 
     # Display the panel
     console.print(result_panel)
-    def display_directory(directory: Path, max_items=5):
-        console = Console(width=100, color_system="auto")
-        tree = Tree(
-            f"[bold magenta]:file_folder: {directory.name}",
-            guide_style="bold bright_blue",
-        )
-
-        def add_directory(tree, directory):
-            paths = sorted(directory.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))
-            for path in paths[:max_items]:
-                if path.is_dir():
-                    branch = tree.add(f"[bold yellow]:file_folder: {path.name}")
-                    add_directory(branch, path)
-                else:
-                    tree.add(f"[bold green]:page_facing_up: {path.name}")
-            
-            if len(paths) > max_items:
-                tree.add(f"[bold red]... and {len(paths) - max_items} more items")
-
-        add_directory(tree, directory)
-        
-        console.print("\n[bold blue]Directory Structure:[/bold blue]")
-        console.print(tree)
-    display_directory(workspace_dir)
 if __name__ == "__main__":
     main()
 
