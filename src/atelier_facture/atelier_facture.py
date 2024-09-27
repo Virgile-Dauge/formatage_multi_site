@@ -17,7 +17,7 @@ import copy
 from pdf_utils import ajouter_ligne_regroupement
 from mpl import export_table_as_pdf
 
-from atelier_facture import process_zipped_pdfs
+from extraction import process_zipped_pdfs
 
 from rich.logging import RichHandler
 from rich.pretty import pprint
@@ -469,7 +469,7 @@ def sort_xls_by_group(df: DataFrame, groups: list[str], merge_dir: Path=None):
         
         # Créer le répertoire pour le groupement s'il n'existe pas
         group_dir = merge_dir / str(group)
-        group_dir.mkdir(exist_ok=True)
+        group_dir.mkdir(exist_ok=True, parents=True)
         
         # Enregistrer les données triées dans un fichier Excel
         df_groupement.to_excel(group_dir / f"{group}.xlsx", index=False)
@@ -494,12 +494,13 @@ def export_tables_as_pdf(groups: list[str], merge_dir: Path):
 
         export_table_as_pdf(df_g, group_dir / f"Table_{group}.pdf")
 
-def create_grouped_invoices(df: DataFrame, group_dir: Path, merge_dir: Path) -> list[Path]:
+def create_grouped_invoices(df: DataFrame, indiv_dir: Path, group_dir: Path, merge_dir: Path) -> list[Path]:
     """
     Crée des factures groupées à partir des données fournies.
 
     Paramètres:
     df (DataFrame): Le DataFrame contenant les données des factures.
+    indiv_dir (Path): Le chemin vers le répertoire contenant les factures unitaires.
     group_dir (Path): Le chemin vers le répertoire contenant les factures de regroupement.
     merge_dir (Path): Le chemin vers le répertoire où les factures groupées seront enregistrées.
 
@@ -524,7 +525,7 @@ def create_grouped_invoices(df: DataFrame, group_dir: Path, merge_dir: Path) -> 
     export_tables_as_pdf(groups, merge_dir)
 
     logger.info("Tri des fichiers PDF défusionnés \n")
-    sort_pdfs_by_group(df, source_unitaires_dir, group_dir, merge_dir)
+    sort_pdfs_by_group(df, indiv_dir, group_dir, merge_dir)
 
     logger.info("Fusion des PDF par groupement")
     merged_pdf_files = merge_pdfs_by_group(groups, merge_dir)
@@ -577,99 +578,310 @@ def check_missing_pdl(df: DataFrame, pdl_dir: Path) -> set[str]:
         logger.info("└── Tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles.")
     return missing_pdls
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Définir le répertoire de données")
-    parser.add_argument("data_dir", type=str, help="Le chemin du répertoire de données")
-    parser.add_argument("-ec", "--extra_check", action="store_true", help="Vérifie que tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles")
-    parser.add_argument("-v", "--verbose", action="count", default=0, help="Augmente le niveau de verbosité (utilisez -v ou -vv pour plus de détails)")
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import Progress
+from rich.tree import Tree
+from rich.table import Table
+def rich_status_table(batch_status):
+    table = Table(title="Batch Processing Status")
+    table.add_column("Batch", style="cyan", no_wrap=True)
+    table.add_column("Fusion", style="magenta")
+    table.add_column("Zipping", style="magenta")
+
+    for batch, status in batch_status.items():
+        fusion_status = "✅" if status.get('fusion') else "❌"
+        zipping_status = "✅" if status.get('zipping') else "❌"
+        table.add_row(str(batch), fusion_status, zipping_status)
+
+    return table
+from rich.progress import (
+    Progress, 
+    TextColumn, 
+    BarColumn, 
+    TaskProgressColumn, 
+    TimeRemainingColumn,
+    SpinnerColumn
+)
+from rich.console import Console
+
+from rich.text import Text
+def process_with_rich_progress(zip_path, indiv_dir, batch_dir, regex_dict):
+    console = Console()
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=None),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        console=console
+    ) as progress:
+        tasks = {}
+
+        def update_progress(task: str, current: int, total: int, details: str):
+            if task not in tasks:
+                if total == 1:
+                    # Create a spinner task
+                    tasks[task] = progress.add_task(f"[cyan]{task}", total=1)
+                else:
+                    # Create a progress bar task
+                    tasks[task] = progress.add_task(f"[cyan]{task}", total=total)
+            
+            task_id = tasks[task]
+            
+            if total == 1:
+                if current == 0:
+                    # Task started
+                    progress.update(task_id, completed=0, description=f"[cyan]{task}: {details}")
+                elif current == 1:
+                    # Task completed
+                    progress.update(task_id, completed=1, description=f"[bold green]{task}: {details} (Done)")
+            else:
+                # Update progress bar task
+                progress.update(task_id, completed=current, description=f"[cyan]{task}: {details}")
+
+            # Force a refresh of the display
+            progress.refresh()
+
+        console.print("Starting PDF processing...")
+        group_pdfs, individual_pdfs, errors = process_zipped_pdfs(
+            zip_path, indiv_dir, batch_dir, regex_dict, progress_callback=update_progress
+        )
+        console.print("PDF processing completed.")
+    
+    return group_pdfs, individual_pdfs, errors
+
+def rich_directory_tree(directory: Path, max_items=5):
+        console = Console(width=100, color_system="auto")
+        tree = Tree(
+            f"[bold magenta]:file_folder: {directory.name}",
+            guide_style="bold bright_blue",
+        )
+
+        def add_directory(tree, directory):
+            paths = sorted(directory.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))
+            for path in paths[:max_items]:
+                if path.is_dir():
+                    branch = tree.add(f"[bold yellow]:file_folder: {path.name}")
+                    add_directory(branch, path)
+                else:
+                    tree.add(f"[bold green]:page_facing_up: {path.name}")
+            
+            if len(paths) > max_items:
+                tree.add(f"[bold red]... and {len(paths) - max_items} more items")
+
+        add_directory(tree, directory)
+        return tree
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Traitement des factures")
+    parser.add_argument("atelier_path", type=str, help="Chemin du répertoire atelier")
+    parser.add_argument("-i", "--input_zip", type=str, help="Chemin vers le fichier zip d'entrée.")
+    parser.add_argument("-ff", "--forcer_fusion", action="store_true", help="Forcer la fusion des factures même si le dossier existe déjà")
+    parser.add_argument("-fz", "--forcer_zip", action="store_true", help="Forcer la création du zip même si le dossier existe déjà")
     args = parser.parse_args()
+    console = Console()
+    # =======================Étape 0: Définition du répertoire de travail==============
+    console.print(Panel.fit("Étape 0: Définition du répertoire de travail", style="bold magenta"))
+    atelier_dir = Path(args.atelier_path)
+    if not atelier_dir.exists():
+        console.print(f"Le répertoire atelier [bold]{atelier_dir}[/bold] n'existe pas. Création en cours...", style="yellow")
+        atelier_dir.mkdir(parents=True)
+    console.print(f"Répertoire de travail : [bold green]{atelier_dir}[/bold green]")
 
-    # Configurer le niveau de verbosité
-    if args.verbose == 1:
-        logger.setLevel(logging.INFO)
-    elif args.verbose >= 2:
-        logger.setLevel(logging.DEBUG)
-    
-    # définition de l'arborescence
-    data_dir = args.data_dir
-
-    data_dir = Path(data_dir).expanduser()
-    
-    source_unitaires_dir = data_dir.parent / 'source_unitaires'
-    
-    input_dir = data_dir / 'input'
-    output_dir = data_dir / 'output' 
-    
-    extract_dir = output_dir / 'extract'
-    indiv_dir = extract_dir / 'indiv'
-    group_dir = extract_dir / 'group'
-    
-    merge_dir = output_dir / 'merge'
-    
-    res_dir = output_dir / 'results'
-    
-    indiv_dir.mkdir(exist_ok=True, parents=True)
-    group_dir.mkdir(exist_ok=True, parents=True)
-    merge_dir.mkdir(exist_ok=True, parents=True)
-    res_dir.mkdir(exist_ok=True, parents=True)
-    
-    source_unitaires_dir.mkdir(exist_ok=True, parents=True)
-    
-    
-    # Extraction
-    logger.info("Extraction des factures...")
-    # regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "group_name": group_name_pattern, "pdl_name": pdl_pattern}
-    regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "pdl_name": pdl_pattern}
-    group, indiv, errors = split_pdfs(input_dir, extract_dir, regex_dict)
-    logger.info("└── Factures extraites :")
-    logger.info(f"     - {len(set(group))} groupes")
-    logger.info(f"     - {len(set(indiv))} individuelles")
-    if errors:
-        logger.warning("Erreurs :")
-        logger.warning(errors)
-        errors_csv_path = output_dir / "errors.csv"
-        df_errors = pd.DataFrame(errors, columns=['error'])
-        df_errors.to_csv(errors_csv_path, index=False)
-        logger.info(f"Les erreurs ont été enregistrées dans {errors_csv_path}")
-
-    # On consolide le dossier des factures unitaires 
-    # en y copiant les nouvelles factures unitaires
-    for file in indiv_dir.glob('*.pdf'):
-        if not (source_unitaires_dir / file.name).exists():
-            shutil.copy(file, source_unitaires_dir / file.name)
-
-    logger.info(f"Lecture du fichier Excel 'lien.xlsx' pour retrouver les regroupement et PDL associés")
-    if not (data_dir / 'input' / "lien.xlsx").exists():
-        logger.warning("└── Le fichier 'lien.xlsx' est introuvable. Arrêt de l'exécution.")
-        sys.exit(0)
+    indiv_dir = atelier_dir / "indiv"
+    indiv_dir.mkdir(exist_ok=True)
+    # =======================Étape 1: Traitement du zip d'entrée=======================
+    console.print(Panel.fit("Étape 1: Traitement du zip d'entrée", style="bold magenta"))
+    if args.input_zip:
+        zip_path = Path(args.input_zip)
         
-    # Lecture des données Excel
-    df = pd.read_excel(data_dir / 'input' / "lien.xlsx", sheet_name='Sheet1')
-    
-    # Remplacer les tirets moyens par des tirets courts
-    df = df.replace('–', '-', regex=True)
-    
-    if args.extra_check:
-        check_missing_pdl(df, source_unitaires_dir)
-    
-    # Detect groups with only one line in df
-    single_line_groups = df.groupby('groupement').filter(lambda x: len(x) == 1)
+        batch_dir = atelier_dir / zip_path.stem
+        batch_dir.mkdir(exist_ok=True)
+        regex_dict = {
+            'date': r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})',
+            'client_name': r'Nom et Prénom ou\s* Raison Sociale :\s*(.*)',
+            'group_name': r'Regroupement de facturation\s*:\s*\((.*?)\)',
+            'pdl': r'Référence PDL : (\d{14})',
+            'invoice_id': r'N° de facture\s*:\s*(\d{14})'
+        }
 
-    # Remove 'nan' group if it exists
-    single_line_groups = single_line_groups[single_line_groups['groupement'] != 'nan']
+        group_pdfs, individual_pdfs, errors = process_with_rich_progress(zip_path, indiv_dir, batch_dir, regex_dict)
+        #group_pdfs, individual_pdfs, errors = process_zipped_pdfs(zip_path, indiv_dir, batch_dir, regex_dict)
+        console.print(f"Traitement terminé pour [bold]{zip_path}[/bold]", style="green")
+        result_panel = Panel(
+            f"""
+            [bold green]Processing Results:[/bold green]
+            Number of Group PDFs: {len(group_pdfs)}
+            Number of Individual PDFs: {len(individual_pdfs)}
+            Number of Errors: {len(errors)}
+            """,
+            title="Données extraites",
+            # expand=False,
+            # border_style="green",
+        )
 
-    logger.info(f"Groupes avec une seule ligne : {single_line_groups['groupement'].tolist()}")
+        # Display the panel
+        console.print(result_panel)
+    else:
+        console.print("Aucun fichier d'entrée spécifié. Étape ignorée.", style="yellow")
 
-    for _, row in single_line_groups.iterrows():
-        group = row['groupement']
-        prm = row['PRM']
-        matching_files = list(source_unitaires_dir.glob(f"*{prm}*.pdf"))
-        if matching_files:
-            ajouter_ligne_regroupement(matching_files[0], output_dir, f'Regroupement de facturation : ({group})')
+
+    # =======================Étape 2: Liste des dossiers dans l'atelier================
+    console.print(Panel.fit("Étape 2: Liste des dossiers dans l'atelier", style="bold magenta"))
+    subdirs = [d for d in atelier_dir.iterdir() if d.is_dir() and d.name not in ['group', 'indiv']]
+    console.print("Dossiers trouvés :", style="cyan")
+    for d in subdirs:
+        console.print(f"  - {d.name}", style="cyan")
+
+    # =======================Étape 3 : Traitement des dossiers=========================
+    batch_status = {}
+    for subdir in subdirs:
+        batch_status[subdir] = {'fusion': False, 'zipping': False}
+        console.print(Panel.fit(f"Traitement du dossier : {subdir.name}", style="bold blue"))
+        
+        xlsx_file = subdir / f"{subdir.name}.xlsx"
+        # ===================Étape 3A : Fusion des factures=============================
+        console.print("Étape 3A : Fusion des factures", style="yellow")
+        if xlsx_file.exists():
+            factures_groupees_dir = subdir / "factures_groupees"
+            if not any(factures_groupees_dir.glob('*.pdf')) or args.forcer_fusion:
+                factures_groupees_dir.mkdir(exist_ok=True)
+                df = pd.read_excel(xlsx_file, sheet_name='Sheet1')
+                # Remplacer les tirets moyens par des tirets courts
+                df = df.replace('–', '-', regex=True)
+                merged_pdf_files = create_grouped_invoices(df=df, indiv_dir=indiv_dir, group_dir=subdir, merge_dir=subdir / 'fusion')
+                compress_pdfs(merged_pdf_files, factures_groupees_dir)
+                console.print(f"Fusion des factures pour [bold]{subdir.name}[/bold]", style="green")
+            else:
+                console.print(f"Le dossier [bold]{factures_groupees_dir}[/bold] existe déjà. Fusion ignorée.", style="yellow")
+            batch_status[subdir]['fusion'] = True
         else:
-            logger.warning(f"Aucun fichier trouvé pour le pdl {prm} du groupe à pdl unique {group}")
-    
-    merged_pdf_files = create_grouped_invoices(df=df, group_dir=group_dir, merge_dir=merge_dir)
+            console.print(f"Fichier Excel [bold]{xlsx_file.name}[/bold] non trouvé. Fusion ignorée.", style="red")
+        # ===================Étape 3B : Création du zip avec facturix====================
+        console.print("Étape 3B : Création du zip avec facturix", style="yellow")
+        factures_groupees_dir = subdir / "factures_groupees"
+        bt_csv = factures_groupees_dir / "BT.csv"
+        if bt_csv.exists():
+            factures_zipees_dir = subdir / "factures_zipees"
+            if not factures_zipees_dir.exists() or args.forcer_zip:
+                factures_zipees_dir.mkdir(exist_ok=True)
+                # Utilisation de facturix pour créer le zip
+                # package_invoices(str(factures_groupees_dir), str(factures_zipees_dir))
+                console.print(f"Création du zip pour [bold]{subdir.name}[/bold]", style="green")
+            else:
+                console.print(f"Le dossier [bold]{factures_zipees_dir}[/bold] existe déjà. Création du zip ignorée.", style="yellow")
+                batch_status[subdir]['zipping'] = True
+        else:
+            console.print(f"Fichier BT.csv non trouvé dans [bold]{factures_groupees_dir}[/bold]. Création du zip ignorée.", style="red")
 
-    logger.info("Reduce PDF size")
-    compress_pdfs(merged_pdf_files, res_dir)
+
+    console.print(Panel.fit("Traitement terminé", style="bold green"))
+    # =======================Étape 4: état des lieux de l'atelier==========================
+    
+
+    tree = rich_directory_tree(atelier_dir, 2)
+    console.print("\n[bold blue]Directory Structure:[/bold blue]")
+    console.print(tree)
+
+    console.print(rich_status_table(batch_status))
+
+if __name__ == "__main__":
+    main()
+    # parser = argparse.ArgumentParser(description="Définir le répertoire de données")
+    # parser.add_argument("data_dir", type=str, help="Le chemin du répertoire de données")
+    # parser.add_argument("-ec", "--extra_check", action="store_true", help="Vérifie que tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles")
+    # parser.add_argument("-v", "--verbose", action="count", default=0, help="Augmente le niveau de verbosité (utilisez -v ou -vv pour plus de détails)")
+    # args = parser.parse_args()
+
+    # # Configurer le niveau de verbosité
+    # if args.verbose == 1:
+    #     logger.setLevel(logging.INFO)
+    # elif args.verbose >= 2:
+    #     logger.setLevel(logging.DEBUG)
+    
+    # # définition de l'arborescence
+    # data_dir = args.data_dir
+
+    # data_dir = Path(data_dir).expanduser()
+    
+    # source_unitaires_dir = data_dir.parent / 'source_unitaires'
+    
+    # input_dir = data_dir / 'input'
+    # output_dir = data_dir / 'output' 
+    
+    # extract_dir = output_dir / 'extract'
+    # indiv_dir = extract_dir / 'indiv'
+    # group_dir = extract_dir / 'group'
+    
+    # merge_dir = output_dir / 'merge'
+    
+    # res_dir = output_dir / 'results'
+    
+    # indiv_dir.mkdir(exist_ok=True, parents=True)
+    # group_dir.mkdir(exist_ok=True, parents=True)
+    # merge_dir.mkdir(exist_ok=True, parents=True)
+    # res_dir.mkdir(exist_ok=True, parents=True)
+    
+    # source_unitaires_dir.mkdir(exist_ok=True, parents=True)
+    
+    
+    # # Extraction
+    # logger.info("Extraction des factures...")
+    # # regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "group_name": group_name_pattern, "pdl_name": pdl_pattern}
+    # regex_dict = {"date": date_pattern, "client_name":client_name_pattern, "pdl_name": pdl_pattern}
+    # group, indiv, errors = split_pdfs(input_dir, extract_dir, regex_dict)
+    # logger.info("└── Factures extraites :")
+    # logger.info(f"     - {len(set(group))} groupes")
+    # logger.info(f"     - {len(set(indiv))} individuelles")
+    # if errors:
+    #     logger.warning("Erreurs :")
+    #     logger.warning(errors)
+    #     errors_csv_path = output_dir / "errors.csv"
+    #     df_errors = pd.DataFrame(errors, columns=['error'])
+    #     df_errors.to_csv(errors_csv_path, index=False)
+    #     logger.info(f"Les erreurs ont été enregistrées dans {errors_csv_path}")
+
+    # # On consolide le dossier des factures unitaires 
+    # # en y copiant les nouvelles factures unitaires
+    # for file in indiv_dir.glob('*.pdf'):
+    #     if not (source_unitaires_dir / file.name).exists():
+    #         shutil.copy(file, source_unitaires_dir / file.name)
+
+    # logger.info(f"Lecture du fichier Excel 'lien.xlsx' pour retrouver les regroupement et PDL associés")
+    # if not (data_dir / 'input' / "lien.xlsx").exists():
+    #     logger.warning("└── Le fichier 'lien.xlsx' est introuvable. Arrêt de l'exécution.")
+    #     sys.exit(0)
+        
+    # # Lecture des données Excel
+    # df = pd.read_excel(data_dir / 'input' / "lien.xlsx", sheet_name='Sheet1')
+    
+    # # Remplacer les tirets moyens par des tirets courts
+    # df = df.replace('–', '-', regex=True)
+    
+    # if args.extra_check:
+    #     check_missing_pdl(df, source_unitaires_dir)
+    
+    # # Detect groups with only one line in df
+    # single_line_groups = df.groupby('groupement').filter(lambda x: len(x) == 1)
+
+    # # Remove 'nan' group if it exists
+    # single_line_groups = single_line_groups[single_line_groups['groupement'] != 'nan']
+
+    # logger.info(f"Groupes avec une seule ligne : {single_line_groups['groupement'].tolist()}")
+
+    # for _, row in single_line_groups.iterrows():
+    #     group = row['groupement']
+    #     prm = row['PRM']
+    #     matching_files = list(source_unitaires_dir.glob(f"*{prm}*.pdf"))
+    #     if matching_files:
+    #         ajouter_ligne_regroupement(matching_files[0], output_dir, f'Regroupement de facturation : ({group})')
+    #     else:
+    #         logger.warning(f"Aucun fichier trouvé pour le pdl {prm} du groupe à pdl unique {group}")
+    
+    # merged_pdf_files = create_grouped_invoices(df=df, group_dir=group_dir, merge_dir=merge_dir)
+
+    # logger.info("Reduce PDF size")
+    # compress_pdfs(merged_pdf_files, res_dir)
