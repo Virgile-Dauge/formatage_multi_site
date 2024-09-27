@@ -292,7 +292,6 @@ def process_zipped_pdfs(
 
         return groups, indivs, errors
     finally:
-        update_progress("Cleanup", 0, 0)
         shutil.rmtree(temp_dir)  # Clean up temp directory
 
 def main():
