@@ -287,7 +287,7 @@ def process_zipped_pdfs(
     temp_dir = extract_nested_pdfs(input_path)
     update_progress("Extracting PDFs", 1, 1, "Extraction complete")
     update_progress("Extracting csv and xlsx", 0, 1, "Starting extraction")
-    extract_root_level_csv_xlsx(input_path, group_dir / 'factures_groupees', group_dir)
+    extract_root_level_csv_xlsx(input_path, group_dir, group_dir)
     update_progress("Extracting csv and xlsx", 1, 1, "Extraction complete")
     groups = []
     indivs = []

@@ -132,6 +132,7 @@ def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name 
     client_name = metadata['ClientName']
     # Sauvegarder le fichier PDF modifié dans un nouveau dossier depuis le même dossier que le dossier d'entrée
     output_pdf_path = output_dir / f"{date}-{client_name} - {group_name}.pdf"
+    output_dir.mkdir(parents=True, exist_ok=True)
     doc.save(output_pdf_path)
     doc.close()
 

@@ -10,20 +10,20 @@ from rich.progress import (
     TimeRemainingColumn,
     SpinnerColumn
 )
-
+from typing import Any
 from pathlib import Path
 from extraction import process_zipped_pdfs
 
-def rich_status_table(batch_status: dict[dict[str, bool]])-> Table:
+def rich_status_table(batch_status: dict[dict[str, Any]])-> Table:
     table = Table(title="Batch Processing Status")
     table.add_column("Batch", style="cyan", no_wrap=True)
     table.add_column("Fusion", style="magenta")
-    table.add_column("Zipping", style="magenta")
-
+    table.add_column("Facturx", style="magenta")
+    print(batch_status)
     for batch, status in batch_status.items():
         fusion_status = "✅" if status.get('fusion') else "❌"
-        zipping_status = "✅" if status.get('zipping') else "❌"
-        table.add_row(str(batch), fusion_status, zipping_status)
+        facturx_status = "✅" if isinstance(status.get('facturx'), bool) else status.get('facturx')
+        table.add_row(str(batch), fusion_status, facturx_status)
 
     return table
 

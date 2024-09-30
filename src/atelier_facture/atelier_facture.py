@@ -15,6 +15,11 @@ from rich.logging import RichHandler
 # local imports
 from rich_components import process_with_rich_progress, rich_status_table, rich_directory_tree 
 from fusion import create_grouped_invoices, create_grouped_single_invoice
+from empaquetage import extract_metadata_and_update_df
+
+from facturix import process_pdfs_with_progress, gen_xmls
+from facturx import generate_from_file
+
 # Configuration du logger pour utiliser Rich
 logging.basicConfig(
     level=logging.INFO,
@@ -32,6 +37,7 @@ def compress_pdfs(pdf_files: list[Path], output_dir: Path):
     pdf_files (list[Path]): Liste des chemins des fichiers PDF à compresser.
     output_dir (Path): Chemin du répertoire où les fichiers PDF compressés seront enregistrés.
     """
+    output_dir.mkdir(parents=True, exist_ok=True)
     for pdf_file in pdf_files:
         doc = fitz.open(pdf_file)
         if not doc.page_count == 0:
@@ -72,6 +78,7 @@ def main():
     parser.add_argument("-i", "--input", type=str, help="Chemin vers le fichier zip d'entrée, ou le dossier de zips d'entrée.")
     parser.add_argument("-ff", "--forcer_fusion", action="store_true", help="Forcer la fusion des factures même si le dossier existe déjà")
     parser.add_argument("-fz", "--forcer_zip", action="store_true", help="Forcer la création du zip même si le dossier existe déjà")
+    parser.add_argument("-fp", "--forcer_pdfa3", action="store_true", help="Forcer la generation des pdf/A-3")
     args = parser.parse_args()
     console = Console()
     # =======================Étape 0: Définition du répertoire de travail==============
@@ -84,6 +91,8 @@ def main():
 
     indiv_dir = atelier_dir / "indiv"
     indiv_dir.mkdir(exist_ok=True)
+    # group_mono_dir = atelier_dir / "group_mono"
+    # group_mono_dir.mkdir(exist_ok=True)
     # =======================Étape 1: Traitement du zip d'entrée=======================
     console.print(Panel.fit("Étape 1: Traitement des entrées", style="bold magenta"))
     regex_dict = {
@@ -130,7 +139,7 @@ def main():
 
     # =======================Étape 2: Liste des dossiers dans l'atelier================
     console.print(Panel.fit("Étape 2: Liste des dossiers dans l'atelier", style="bold magenta"))
-    subdirs = [d for d in atelier_dir.iterdir() if d.is_dir() and d.name not in ['group', 'indiv']]
+    subdirs = [d for d in atelier_dir.iterdir() if d.is_dir() and d.name not in ['group', 'indiv', 'group_mono']]
     console.print("Dossiers trouvés :", style="cyan")
     for d in subdirs:
         console.print(f"  - {d.name}", style="cyan")
@@ -138,54 +147,89 @@ def main():
     # =======================Étape 3 : Traitement des dossiers=========================
     batch_status = {}
     for subdir in subdirs:
-        batch_status[subdir] = {'fusion': False, 'zipping': False}
+        batch_status[subdir] = {'fusion': False, 'facturx': False}
         console.print(Panel.fit(f"Traitement du dossier : {subdir.name}", style="bold blue"))
-        
+        group_mult_dir = subdir / 'group_mult'
+        group_mono_dir = subdir / 'group_mono'
+        group_mult_dir.mkdir(exist_ok=True)
+        group_mono_dir.mkdir(exist_ok=True)
         xlsx_file = subdir / f"{subdir.name}.xlsx"
         # ===================Étape 3A : Fusion des factures=============================
         console.print("Étape 3A : Fusion des factures", style="yellow")
+
         if xlsx_file.exists():
-            factures_groupees_dir = subdir / "factures_groupees"
-            if not any(factures_groupees_dir.glob('*.pdf')) or args.forcer_fusion:
-                factures_groupees_dir.mkdir(exist_ok=True)
+            
+            if not any(group_mult_dir.glob('*.pdf')) or args.forcer_fusion:
                 df = pd.read_excel(xlsx_file, sheet_name='Sheet1')
                 # Remplacer les tirets moyens par des tirets courts
                 df = df.replace('–', '-', regex=True)
-                merged_pdf_files = create_grouped_invoices(df=df, indiv_dir=indiv_dir, group_dir=subdir, merge_dir=subdir / 'fusion')
 
-                create_grouped_single_invoice(df=df, indiv_dir=indiv_dir, group_dir=subdir, merge_dir=subdir / 'fusion')
-                compress_pdfs(merged_pdf_files, factures_groupees_dir)
+                # TODO quand ok, remplacer merge_dir par tmp_dir
+                merged_pdf_files = create_grouped_invoices(df=df, indiv_dir=indiv_dir, group_dir=subdir, merge_dir=subdir / 'fusion')
+                compress_pdfs(merged_pdf_files, group_mult_dir)
+
+                create_grouped_single_invoice(df=df, indiv_dir=indiv_dir, output_dir=group_mono_dir)
                 console.print(f"Fusion des factures pour [bold]{subdir.name}[/bold]", style="green")
             else:
-                console.print(f"Le dossier [bold]{factures_groupees_dir}[/bold] existe déjà. Fusion ignorée.", style="yellow")
+                console.print(f"Le dossier [bold]{group_mult_dir}[/bold] existe déjà. Fusion ignorée.", style="yellow")
             batch_status[subdir]['fusion'] = True
         else:
             console.print(f"Fichier Excel [bold]{xlsx_file.name}[/bold] non trouvé. Fusion ignorée.", style="red")
         # ===================Étape 3B : Création du zip avec facturix====================
         console.print("Étape 3B : Création du zip avec facturix", style="yellow")
-        factures_groupees_dir = subdir / "factures_groupees"
-        bt_csv = factures_groupees_dir / "BT.csv"
-        if bt_csv.exists():
-            factures_zipees_dir = subdir / "factures_zipees"
-            if not factures_zipees_dir.exists() or args.forcer_zip:
-                factures_zipees_dir.mkdir(exist_ok=True)
+        bt_csv_files = list(subdir.glob("BT*.csv"))
+        pdfa3_dir = subdir / "pdf3a"
+        facturx_dir = subdir / "facturx"
+        bt_up_path = pdfa3_dir / "BT_updated.csv"
+        if bt_csv_files and bt_csv_files[0].exists():
+            if not pdfa3_dir.exists() or args.forcer_pdfa3:
+                bt_df = pd.read_csv(bt_csv_files[0]).replace('–', '-', regex=True)
+
+                pdfs = list(group_mult_dir.glob('*.pdf')) + list(group_mono_dir.glob('*.pdf'))
+                bt_df = extract_metadata_and_update_df(pdfs, bt_df)
+                
+                to_convert = [Path(f) for f in bt_df['pdf'] if pd.notna(f) and f]
+                process_pdfs_with_progress(to_convert, pdfa3_dir)
+                # Update the 'pdf' column with the new path while keeping the original filename
+                bt_df['pdf'] = bt_df['pdf'].apply(lambda x: str(pdfa3_dir / Path(x).name) if pd.notna(x) and x else x)
+                bt_df.to_csv(bt_up_path, index=False)
+            
+            if not facturx_dir.exists() or args.forcer_zip:
+                facturx_dir.mkdir(exist_ok=True)
+                
+                bt_df = pd.read_csv(bt_up_path)
+                bt_df_nan = bt_df[bt_df['pdf'].isna()]
+                bt_df = bt_df.dropna(subset=['pdf'])
+                to_embed = gen_xmls(bt_df, pdfa3_dir)
+                for p, x in to_embed:
+        
+                    with open(x, 'rb') as xml_file:
+                        xml_bytes = xml_file.read()
+
+                    output_file = facturx_dir / p.name
+                    # Générer une facture Factur-X avec le fichier XML intégré dans le PDF
+                    facturx_pdf = generate_from_file(
+                        p,  # Le PDF original à transformer en PDF/A-3
+                        xml_bytes,
+                        output_pdf_file=str(output_file),  # Le fichier PDF/A-3 de sortie
+                    )
                 # Utilisation de facturix pour créer le zip
-                # package_invoices(str(factures_groupees_dir), str(factures_zipees_dir))
                 console.print(f"Création du zip pour [bold]{subdir.name}[/bold]", style="green")
+                batch_status[subdir]['facturx'] = f'{len(bt_df)}/{len(bt_df) + len(bt_df_nan)}'
             else:
-                console.print(f"Le dossier [bold]{factures_zipees_dir}[/bold] existe déjà. Création du zip ignorée.", style="yellow")
-                batch_status[subdir]['zipping'] = True
+                console.print(f"Le dossier [bold]{facturx_dir}[/bold] existe déjà. Création du zip ignorée.", style="yellow")
+                batch_status[subdir]['facturx'] = True
         else:
-            console.print(f"Fichier BT.csv non trouvé dans [bold]{factures_groupees_dir}[/bold]. Création du zip ignorée.", style="red")
+            console.print(f"Fichier BT.csv non trouvé dans [bold]{subdir}[/bold]. Création du zip ignorée.", style="red")
 
 
     console.print(Panel.fit("Traitement terminé", style="bold green"))
     # =======================Étape 4: état des lieux de l'atelier==========================
     
 
-    tree = rich_directory_tree(atelier_dir, 2)
-    console.print("\n[bold blue]Directory Structure:[/bold blue]")
-    console.print(tree)
+    # tree = rich_directory_tree(atelier_dir, 2)
+    # console.print("\n[bold blue]Directory Structure:[/bold blue]")
+    # console.print(tree)
 
     console.print(rich_status_table(batch_status))
 
