@@ -1,9 +1,9 @@
 from pathlib import Path
 import io
-import fitz  # PyMuPDF
+import pymupdf
 def extraire_polices_pdf(fichier_pdf):
     # Ouvrir le fichier PDF
-    doc = fitz.open(fichier_pdf)
+    doc = pymupdf.open(fichier_pdf)
     polices = set()  # Utilisation d'un set pour éviter les doublons
 
     # Parcourir chaque page
@@ -23,6 +23,32 @@ def extraire_polices_pdf(fichier_pdf):
     doc.close()
     return polices
 
+def get_extended_metadata(doc) -> dict[str, str]:
+    """
+    Extracts extended metadata from a PDF document.
+    """
+    metadata = {}  # make my own metadata dict
+    what, value = doc.xref_get_key(-1, "Info")  # /Info key in the trailer
+    if what != "xref":
+        pass  # PDF has no metadata
+    else:
+        xref = int(value.replace("0 R", ""))  # extract the metadata xref
+        for key in doc.xref_get_keys(xref):
+            metadata[key] = doc.xref_get_key(xref, key)[1]
+    return metadata
+
+def store_extended_metadata(doc, metadata: dict[str, str]):
+    """
+    Stores extended metadata in a PDF document.
+    """
+    what, value = doc.xref_get_key(-1, "Info")  # /Info key in the trailer
+    if what != "xref":
+        raise ValueError("PDF has no metadata")
+    
+    xref = int(value.replace("0 R", ""))  # extract the metadata xref
+    for key, value in metadata.items():
+        # add some private information
+        doc.xref_set_key(xref, key, pymupdf.get_pdf_str(value))
 def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name : str, fontname : str="hebo", fontsize : int=11):
     """
     Ajoute une ligne de regroupement à un fichier PDF existant.
@@ -56,12 +82,12 @@ def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name 
         
         lignes = []
         # Vérifier si le texte de regroupement est trop long pour une seule ligne
-        if fitz.get_text_length(texte_regroupement, fontname=fontname, fontsize=fontsize) > max_largeur:
+        if pymupdf.get_text_length(texte_regroupement, fontname=fontname, fontsize=fontsize) > max_largeur:
             # Diviser le texte en plusieurs lignes
             mots = texte_regroupement.split()
             ligne = ""
             for mot in mots:
-                if fitz.get_text_length(ligne + " " + mot, fontname=fontname, fontsize=fontsize) <= max_largeur:
+                if pymupdf.get_text_length(ligne + " " + mot, fontname=fontname, fontsize=fontsize) <= max_largeur:
                     ligne += " " + mot
                 else:
                     lignes.append(ligne.strip())
@@ -74,7 +100,7 @@ def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name 
     texte_regroupement = f'Regroupement de facturation : ({group_name})'
     lignes = obtenir_lignes_regroupement(texte_regroupement, fontname, fontsize, max_largeur=290)
     # Ouvrir le fichier PDF
-    doc = fitz.open(fichier_pdf)
+    doc = pymupdf.open(fichier_pdf)
 
     # Charger la première page uniquement
     page = doc.load_page(0)
@@ -95,21 +121,24 @@ def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name 
                 page.insert_text((rect.x0, rect.y0 + interligne*(2 + i)), l, fontsize=fontsize, fontname=fontname, color=(0, 0, 0))
                     
     # Read metadata
-    metadata = doc.metadata
+    metadata = get_extended_metadata(doc)
+    
+    metadata['GroupName'] = str(group_name)
 
-    metadata['keywords'] = str(group_name)
-    doc.set_metadata(metadata)
+    store_extended_metadata(doc, metadata)
+    metadata = get_extended_metadata(doc)
+
+    date = metadata['CreationDate']
+    client_name = metadata['ClientName']
     # Sauvegarder le fichier PDF modifié dans un nouveau dossier depuis le même dossier que le dossier d'entrée
-    nouveau_dossier = output_dir / "groupement_facture_unique"
-    nouveau_dossier.mkdir(parents=True, exist_ok=True)
-    nouveau_fichier_pdf = nouveau_dossier / Path(fichier_pdf).name
-    doc.save(nouveau_fichier_pdf)
+    output_pdf_path = output_dir / f"{date}-{client_name} - {group_name}.pdf"
+    doc.save(output_pdf_path)
     doc.close()
 
 
 def remplacer_texte_pdf(fichier_entree, fichier_sortie, ancien_texte, nouveau_texte):
     # Ouvrir le fichier PDF
-    doc = fitz.open(fichier_entree)
+    doc = pymupdf.open(fichier_entree)
 
     # Parcourir chaque page
     for page_num in range(doc.page_count):
