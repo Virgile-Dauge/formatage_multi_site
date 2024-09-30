@@ -166,13 +166,16 @@ def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path,
             logger.warning(f"Unable to categorize PDF. date: {date}, client_name: {client_name}, group_name: {group_name}, pdl_name: {pdl_name}")
             return
         metadata = {
-            '/Title': f"Facture pour {client_name}",
+            '/Title': f"Facture {invoice_id} pour {client_name}",
             '/ClientName': client_name,
-            '/Date': date,
+            '/GroupName': group_name,
+            '/CreationDate': date,
+            #'/Subject': client_name,
             '/Application': 'atelier-facture',
-            '/Keywords': group_name,  # Standard field for group name
-            '/PDL': pdl_name,
+            #'/Keywords': group_name,  # Standard field for group name
+            '/Pdl': pdl_name,
             '/InvoiceID': invoice_id,
+            '/Producer': 'atelier-facture'
         }
         writer.add_metadata(metadata)
         with open(output_pdf_path, "wb") as output_pdf:
