@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 from pandas import DataFrame
 
-from pypdf import PdfWriter
+from pypdf import PdfReader, PdfWriter
 
 from mpl import export_table_as_pdf
 from pdf_utils import ajouter_ligne_regroupement
@@ -71,6 +71,13 @@ def merge_pdfs_by_group(groups: list[str], merge_dir: Path) -> list[Path]:
         if not group_pdf:
             logger.warning(f"Aucune facture de groupement n'a été trouvée dans le même dossier pour {group}!")
         else:
+            # Read the group PDF to get its metadata
+            with open(group_pdf[0], 'rb') as file:
+                reader = PdfReader(file)
+            
+                # Copy metadata from the group PDF
+                merger.add_metadata(reader.metadata)
+
             # Ajouter la facture globale en premier
             merger.append(group_pdf[0])
             pdf_files.remove(group_pdf[0])
@@ -261,7 +268,7 @@ def create_grouped_invoices(df: DataFrame, indiv_dir: Path, group_dir: Path, mer
 def normalize(string: str) -> str:
     return str(string).replace(" ", "").replace("-", "").lower()
 
-def create_grouped_single_invoice(df: DataFrame, indiv_dir: Path, group_dir: Path, merge_dir: Path) -> Path:
+def create_grouped_single_invoice(df: DataFrame, indiv_dir: Path, output_dir: Path) -> Path:
     # Detect groups with only one line in df
     single_line_groups = df.groupby('groupement').filter(lambda x: len(x) == 1)
     # Remove 'nan' group if it exists
@@ -273,6 +280,6 @@ def create_grouped_single_invoice(df: DataFrame, indiv_dir: Path, group_dir: Pat
         prm = row['PRM']
         matching_files = list(indiv_dir.glob(f"*{prm}*.pdf"))
         if matching_files:
-            ajouter_ligne_regroupement(matching_files[0], indiv_dir, group)
+            ajouter_ligne_regroupement(matching_files[0], output_dir, group)
         else:
             logger.warning(f"Aucun fichier trouvé pour le pdl {prm} du groupe à pdl unique {group}")
