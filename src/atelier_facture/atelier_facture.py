@@ -17,8 +17,7 @@ from rich_components import process_with_rich_progress, rich_status_table, rich_
 from fusion import create_grouped_invoices, create_grouped_single_invoice
 from empaquetage import extract_metadata_and_update_df
 
-from facturix import process_pdfs_with_progress, gen_xmls
-from facturx import generate_from_file
+from facturix import process_invoices
 
 # Configuration du logger pour utiliser Rich
 logging.basicConfig(
@@ -91,8 +90,7 @@ def main():
 
     indiv_dir = atelier_dir / "indiv"
     indiv_dir.mkdir(exist_ok=True)
-    # group_mono_dir = atelier_dir / "group_mono"
-    # group_mono_dir.mkdir(exist_ok=True)
+
     # =======================Étape 1: Traitement du zip d'entrée=======================
     console.print(Panel.fit("Étape 1: Traitement des entrées", style="bold magenta"))
     regex_dict = {
@@ -180,47 +178,23 @@ def main():
         bt_csv_files = list(subdir.glob("BT*.csv"))
         pdfa3_dir = subdir / "pdf3a"
         facturx_dir = subdir / "facturx"
-        bt_up_path = pdfa3_dir / "BT_updated.csv"
+        bt_up_path = subdir / "BT_updated.csv"
+
+        conform_pdf : bool = not bt_up_path.exists() or args.forcer_pdfa3
         if bt_csv_files and bt_csv_files[0].exists():
-            if not pdfa3_dir.exists() or args.forcer_pdfa3:
-                bt_df = pd.read_csv(bt_csv_files[0]).replace('–', '-', regex=True)
+            bt_df = pd.read_csv(bt_csv_files[0]).replace('–', '-', regex=True)
+            pdfs = list(group_mult_dir.glob('*.pdf')) + list(group_mono_dir.glob('*.pdf'))
+            bt_df = extract_metadata_and_update_df(pdfs, bt_df)
+            bt_df.to_csv(bt_up_path, index=False)
 
-                pdfs = list(group_mult_dir.glob('*.pdf')) + list(group_mono_dir.glob('*.pdf'))
-                bt_df = extract_metadata_and_update_df(pdfs, bt_df)
-                
-                to_convert = [Path(f) for f in bt_df['pdf'] if pd.notna(f) and f]
-                process_pdfs_with_progress(to_convert, pdfa3_dir)
-                # Update the 'pdf' column with the new path while keeping the original filename
-                bt_df['pdf'] = bt_df['pdf'].apply(lambda x: str(pdfa3_dir / Path(x).name) if pd.notna(x) and x else x)
-                bt_df.to_csv(bt_up_path, index=False)
-            
-            if not facturx_dir.exists() or args.forcer_zip:
-                facturx_dir.mkdir(exist_ok=True)
-                
-                bt_df = pd.read_csv(bt_up_path)
-                bt_df_nan = bt_df[bt_df['pdf'].isna()]
-                bt_df = bt_df.dropna(subset=['pdf'])
-                to_embed = gen_xmls(bt_df, pdfa3_dir)
-                for p, x in to_embed:
-        
-                    with open(x, 'rb') as xml_file:
-                        xml_bytes = xml_file.read()
 
-                    output_file = facturx_dir / p.name
-                    # Générer une facture Factur-X avec le fichier XML intégré dans le PDF
-                    facturx_pdf = generate_from_file(
-                        p,  # Le PDF original à transformer en PDF/A-3
-                        xml_bytes,
-                        output_pdf_file=str(output_file),  # Le fichier PDF/A-3 de sortie
-                    )
-                # Utilisation de facturix pour créer le zip
-                console.print(f"Création du zip pour [bold]{subdir.name}[/bold]", style="green")
-                batch_status[subdir]['facturx'] = f'{len(bt_df)}/{len(bt_df) + len(bt_df_nan)}'
-            else:
-                console.print(f"Le dossier [bold]{facturx_dir}[/bold] existe déjà. Création du zip ignorée.", style="yellow")
-                batch_status[subdir]['facturx'] = True
+            errors = process_invoices(bt_df, pdfa3_dir, facturx_dir, conform_pdf=conform_pdf)
+
+            console.print(f"Création du zip pour [bold]{subdir.name}[/bold]", style="green")
+            batch_status[subdir]['facturx'] = f'{len(bt_df)}/{len(bt_df)}'
         else:
             console.print(f"Fichier BT.csv non trouvé dans [bold]{subdir}[/bold]. Création du zip ignorée.", style="red")
+            batch_status[subdir]['facturx'] = True
 
 
     console.print(Panel.fit("Traitement terminé", style="bold green"))
