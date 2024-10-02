@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 from pandas import DataFrame
 import fitz
-
+import pikepdf
 from rich.console import Console
 from rich.panel import Panel
 from rich.logging import RichHandler
@@ -28,21 +28,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger()
 
+# def compress_pdfs(pdf_files: list[Path], output_dir: Path):
+#     """
+#     Compresse une liste de fichiers PDF et les enregistre dans un répertoire de sortie.
+
+#     Paramètres:
+#     pdf_files (list[Path]): Liste des chemins des fichiers PDF à compresser.
+#     output_dir (Path): Chemin du répertoire où les fichiers PDF compressés seront enregistrés.
+#     """
+#     output_dir.mkdir(parents=True, exist_ok=True)
+#     for pdf_file in pdf_files:
+#         doc = fitz.open(pdf_file)
+#         if not doc.page_count == 0:
+#             doc.save(output_dir / pdf_file.name, garbage=4, deflate=True)
+#             doc.close()
 def compress_pdfs(pdf_files: list[Path], output_dir: Path):
     """
-    Compresse une liste de fichiers PDF et les enregistre dans un répertoire de sortie.
+    Compresse une liste de fichiers PDF en compressant les streams.
 
     Paramètres:
     pdf_files (list[Path]): Liste des chemins des fichiers PDF à compresser.
     output_dir (Path): Chemin du répertoire où les fichiers PDF compressés seront enregistrés.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+    
     for pdf_file in pdf_files:
-        doc = fitz.open(pdf_file)
-        if not doc.page_count == 0:
-            doc.save(output_dir / pdf_file.name, garbage=4, deflate=True)
-            doc.close()
+        output_file = output_dir / pdf_file.name
+        
+        try:
+            with pikepdf.Pdf.open(pdf_file) as pdf:
+                pdf.save(output_file, compress_streams=True)
             
+            logging.info(f"Compressed {pdf_file.name} successfully.")
+        except Exception as e:
+            logging.error(f"Error compressing {pdf_file.name}: {str(e)}")         
 def check_missing_pdl(df: DataFrame, pdl_dir: Path) -> set[str]:
     """
     Vérifie que tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles.
@@ -178,6 +197,8 @@ def main():
         bt_csv_files = list(subdir.glob("BT*.csv"))
         pdfa3_dir = subdir / "pdf3a"
         facturx_dir = subdir / "facturx"
+        compressed_facturx_dir = subdir / "compressed_facturx"
+        compressed_facturx_dir.mkdir(exist_ok=True)
         bt_up_path = subdir / "BT_updated.csv"
 
         conform_pdf : bool = not bt_up_path.exists() or args.forcer_pdfa3
@@ -189,7 +210,7 @@ def main():
 
 
             errors = process_invoices(bt_df, pdfa3_dir, facturx_dir, conform_pdf=conform_pdf)
-
+            compress_pdfs(list(Path(facturx_dir).glob('*.pdf')), compressed_facturx_dir)
             console.print(f"Création du zip pour [bold]{subdir.name}[/bold]", style="green")
             batch_status[subdir]['facturx'] = f'{len(bt_df)}/{len(bt_df)}'
         else:
@@ -200,7 +221,7 @@ def main():
     console.print(Panel.fit("Traitement terminé", style="bold green"))
     # =======================Étape 4: état des lieux de l'atelier==========================
     
-
+    
     # tree = rich_directory_tree(atelier_dir, 2)
     # console.print("\n[bold blue]Directory Structure:[/bold blue]")
     # console.print(tree)
