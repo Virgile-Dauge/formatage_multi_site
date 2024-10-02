@@ -44,7 +44,9 @@ def extract_metadata_and_update_df(pdf_files: list[Path], df: pd.DataFrame) -> p
 
         mask = mask if mask.any() else df_copy['pdl'] == pdl
 
-        df_copy.loc[mask, 'BT-1'] = invoice_id
+        # First, convert the entire 'BT-1' column to string type
+        df_copy['BT-1'] = df_copy['BT-1'].astype(str).apply(lambda x: x.rstrip('.0'))
+        df_copy.loc[mask, 'BT-1'] = str(int(invoice_id))
         df_copy.loc[mask, 'pdf'] = pdf_file
         #print(group_name, pdl, mask.any())
 
