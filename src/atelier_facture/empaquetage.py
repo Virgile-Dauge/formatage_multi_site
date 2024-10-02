@@ -1,6 +1,7 @@
 import os
 from pypdf import PdfReader
 import pandas as pd
+import numpy as np
 from pathlib import Path
 import logging
 
@@ -35,6 +36,13 @@ def extract_metadata_and_update_df(pdf_files: list[Path], df: pd.DataFrame) -> p
         df_copy['group'] = ''
     df_copy['group'] = df_copy['group'].fillna('').astype(str).str.strip()
     df_copy['pdl'] = df_copy['pdl'].fillna('').astype(str).str.strip()
+
+    int_columns = ['BT-1', 'BT-13']
+    for col in int_columns:
+        if col in df_copy.columns:
+            df_copy[col] = (df_copy[col]
+                .apply(lambda x: '' if pd.isna(x) else str(x))
+                .str.rstrip('.0'))
     
     for pdf_file in pdf_files:
         reader = PdfReader(pdf_file)
