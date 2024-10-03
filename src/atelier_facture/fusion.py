@@ -244,9 +244,11 @@ def create_grouped_invoices(df: DataFrame, indiv_dir: Path, group_dir: Path, mer
 
     if "nan" in groups:
         groups = groups.remove("nan")
-    
+    logger.debug(f"Groupements dans xlsx : {groups}")
     # Filtrer les groupes pour n'avoir que ceux trouvés dans les factures de regroupement
+    
     found_groups = set([group_name_from_filename(f) for f in group_dir.glob("*.pdf")])
+    logger.debug(f"Groupements dans les pdfs : {found_groups}")
     groups = [g for g in groups if g in found_groups]
     logger.info(f"Groupements à traiter : {groups}")
     
