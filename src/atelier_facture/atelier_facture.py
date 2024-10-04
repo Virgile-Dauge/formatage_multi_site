@@ -149,7 +149,8 @@ def main():
 
     # =======================Étape 1: Traitement du zip d'entrée=======================
     console.print(Panel.fit("Étape 1: Traitement des entrées", style="bold magenta"))
-    process_inputs(Path(args.input), atelier_dir, indiv_dir, console)
+    if args.input:
+        process_inputs(Path(args.input), atelier_dir, indiv_dir, console)
 
     # =======================Étape 2: Liste des dossiers dans l'atelier================
     console.print(Panel.fit("Étape 2: Liste des dossiers dans l'atelier", style="bold magenta"))
