@@ -1,6 +1,8 @@
 from pathlib import Path
 import io
 import pymupdf
+
+from pymupdf import Document
 def extraire_polices_pdf(fichier_pdf):
     # Ouvrir le fichier PDF
     doc = pymupdf.open(fichier_pdf)
@@ -137,40 +139,129 @@ def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name 
     doc.close()
 
 
-def remplacer_texte_pdf(fichier_entree, fichier_sortie, ancien_texte, nouveau_texte):
-    # Ouvrir le fichier PDF
-    doc = pymupdf.open(fichier_entree)
+def obtenir_lignes_regroupement(texte_regroupement: str, fontname: str, fontsize: int, max_largeur: int=500) -> list[str]:
+    """
+    Divise le texte de regroupement en plusieurs lignes si nécessaire pour s'adapter à la largeur maximale spécifiée.
 
-    # Parcourir chaque page
+    Paramètres:
+    texte_regroupement (str): Le texte de regroupement à ajouter.
+    fontname (str): Le nom de la police à utiliser pour le texte ajouté.
+    fontsize (int): La taille de la police à utiliser pour le texte ajouté.
+    max_largeur (int): La largeur maximale autorisée pour une ligne de texte. Par défaut 500.
+
+    Retourne:
+    list[str]: Une liste de lignes de texte adaptées à la largeur maximale spécifiée.
+    """
+    
+    lignes = []
+    # Vérifier si le texte de regroupement est trop long pour une seule ligne
+    if pymupdf.get_text_length(texte_regroupement, fontname=fontname, fontsize=fontsize) > max_largeur:
+        # Diviser le texte en plusieurs lignes
+        mots = texte_regroupement.split()
+        ligne = ""
+        for mot in mots:
+            if pymupdf.get_text_length(ligne + " " + mot, fontname=fontname, fontsize=fontsize) <= max_largeur:
+                ligne += " " + mot
+            else:
+                lignes.append(ligne.strip())
+                ligne = mot
+        lignes.append(ligne.strip())
+    else:
+        lignes.append(texte_regroupement)
+    return lignes
+def ajouter_ligne_regroupement_doc(doc, cible:str = 'Votre espace client :', fontname : str="hebo", fontsize : int=11):
+    """
+    Ajoute une ligne de regroupement à un fichier PDF existant.
+
+    Paramètres:
+    fichier_pdf (Path): Le chemin vers le fichier PDF à modifier.
+    texte_regroupement (str): Le texte de regroupement à ajouter.
+    fontname (str): Le nom de la police à utiliser pour le texte ajouté. Par défaut "hebo".
+    fontsize (int): La taille de la police à utiliser pour le texte ajouté. Par défaut 11.
+
+    Cette fonction ouvre le fichier PDF spécifié, recherche une position spécifique
+    où ajouter le texte de regroupement, et sauvegarde le fichier modifié dans un
+    nouveau dossier nommé "groupement_facture_unique" situé dans le même répertoire
+    que le fichier d'entrée.
+    """
+    
+    metadata = get_extended_metadata(doc)
+    if not "GroupName" in metadata:
+        return
+    group = metadata["GroupName"]
+    if group == '':
+        return
+    
+    print(group)
+    texte_regroupement = f'Regroupement de facturation : ({group})'
+    lignes = obtenir_lignes_regroupement(texte_regroupement, fontname, fontsize, max_largeur=290)
+    print(lignes)
+    # Charger la première page uniquement
+    page = doc.load_page(0)
+    texte = page.get_text("text")
+    
+    # Définir le texte à rechercher
+    texte_a_rechercher = cible
+    
+    # Vérifier si le texte est présent dans la page
+    if texte_a_rechercher in texte:
+        # Rechercher la position du texte
+        zones_texte = page.search_for(texte_a_rechercher)
+        
+        interligne = 12
+        # Ajouter la ligne spécifique en dessous du texte trouvé
+        for rect in zones_texte:
+            for i, l in enumerate(lignes):
+                page.insert_text((rect.x0, rect.y0 + interligne*(2 + i)), l, fontsize=fontsize, fontname=fontname, color=(0, 0, 0))
+                    
+def remplacer_texte_doc(doc, ancien_texte, nouveau_texte, fontname="hebo", fontsize=11):
     for page_num in range(doc.page_count):
         page = doc.load_page(page_num)
         texte = page.get_text("text")
-        
-        # Vérifier si l'ancien texte est présent dans la page
         if ancien_texte in texte:
-            # Rechercher toutes les instances du texte à remplacer
             zones_texte = page.search_for(ancien_texte)
-            
-            # Pour chaque zone où le texte est trouvé
             for rect in zones_texte:
-                # Ajouter une annotation de caviardage (redaction) pour masquer le texte original
                 page.add_redact_annot(rect)
-                
-            # Appliquer le caviardage (supprimer le texte original)
             page.apply_redactions()
-            
-            # Insérer le nouveau texte légèrement décalé de la position d'origine
             for rect in zones_texte:
-                # Insérer le nouveau texte légèrement décalé de l'ancien avec une option de choix de police et détection de l'ancienne police
-                for rect in zones_texte:
-                    fontname = "helv"
-                    fontsize = 11
-                    page.insert_text((rect.x0, rect.y0 + 9.5), nouveau_texte, fontsize=fontsize, fontname=fontname, color=(0, 0, 0))
-    
-    # Sauvegarder le fichier PDF modifié
-    doc.save(fichier_sortie)
+                page.insert_text((rect.x0, rect.y0 + 9.5), nouveau_texte, fontsize=fontsize, fontname=fontname, color=(0, 0, 0))
+  
+def caviarder_texte_doc(doc, cible, x=None, y=None):
+    for page_num in range(doc.page_count):
+        page = doc.load_page(page_num)
+        texte = page.get_text("text")
+        if cible in texte:
+            zones_texte = page.search_for(cible)
+            for rect in zones_texte:
+                if x is not None and y is not None:
+                    rect = pymupdf.Rect(rect.x0, rect.y0, rect.x0 + x, rect.y0 + y)
+                    #page.add_rect_annot(rect)
+                page.add_redact_annot(rect)
+            page.apply_redactions()
+
+def apply_pdf_transformations(input_pdf_path, output_pdf_path, transformations):
+    """
+    Apply a series of transformations to a PDF file.
+
+    Args:
+    input_pdf_path (str): Path to the input PDF file.
+    output_pdf_path (str): Path where the transformed PDF will be saved.
+    transformations (list): A list of transformation functions to apply.
+
+    Each transformation function should take a PyMuPDF document object as its first argument,
+    and any additional arguments specific to that transformation.
+    """
+    # Open the PDF
+    doc = pymupdf.open(input_pdf_path)
+
+
+    # Apply each transformation
+    for transform_func, *args in transformations:
+        transform_func(doc, *args)
+
+    # Save the transformed PDF
+    doc.save(output_pdf_path)
     doc.close()
-    
 
 if __name__ == "__main__":
     import argparse
@@ -185,14 +276,25 @@ if __name__ == "__main__":
     input_pdf = Path(args.pdf_path).expanduser()
     output_pdf = input_pdf.parent / f"replaced_{input_pdf.name}"
     print(output_pdf)
-    remplacer_texte_pdf(args.pdf_path, output_pdf, "Référence PDL : 16423878312360", "Gagné")
+    #remplacer_texte_pdf(args.pdf_path, output_pdf, "Votre espace client  : https://client.enargia.eus", "Votre espace client : suiviconso.enargia.eus")
+    transformations = [
+        (remplacer_texte_doc, "Votre espace client  : https://client.enargia.eus", "Votre espace client : https://suiviconso.enargia.eus"),
+        (caviarder_texte_doc, "Votre identifiant :", 290, 45),
+        (ajouter_ligne_regroupement_doc,)
+        # Add more transformations as needed
+    ]
 
+    apply_pdf_transformations(input_pdf, output_pdf, transformations)
+
+    doc = pymupdf.open(output_pdf)
+    metadata = get_extended_metadata(doc)
+    print(metadata)
     # Exemple d'utilisation
-    polices = extraire_polices_pdf(args.pdf_path)
+    # polices = extraire_polices_pdf(args.pdf_path)
 
-    print("Polices utilisées dans le PDF :")
-    for police in polices:
-        print(police)
+    # print("Polices utilisées dans le PDF :")
+    # for police in polices:
+    #     print(police)
 
-    group = "GROUP - NAME"
-    ajouter_ligne_regroupement(args.pdf_path, f'Regroupement de facturation : ({group})')
+    #group = "GROUP - NAME"
+    #ajouter_ligne_regroupement(args.pdf_path, f'Regroupement de facturation : ({group})')
