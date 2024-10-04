@@ -59,7 +59,7 @@ def compress_pdfs(pdf_files: list[Path], output_dir: Path):
             with pikepdf.Pdf.open(pdf_file) as pdf:
                 pdf.save(output_file, compress_streams=True)
             
-            logging.info(f"Compressed {pdf_file.name} successfully.")
+            logging.debug(f"Compressed {pdf_file.name} successfully.")
         except Exception as e:
             logging.error(f"Error compressing {pdf_file.name}: {str(e)}")         
 def check_missing_pdl(df: DataFrame, pdl_dir: Path) -> set[str]:
@@ -90,6 +90,43 @@ def check_missing_pdl(df: DataFrame, pdl_dir: Path) -> set[str]:
         logger.info("└── Tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles.")
     return missing_pdls
 
+def process_inputs(input_path: Path, atelier_dir: Path, indiv_dir: Path, console, regex_dict: dict[str, str]=None):
+    if regex_dict is None:
+        regex_dict = {
+                'date': r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})',
+                'client_name': r'Nom et Prénom ou\s* Raison Sociale :\s*(.*)',
+                'group_name': r'Regroupement de facturation\s*:\s*\((.*?)\)',
+                'pdl': r'Référence PDL : (\d{14})',
+                'invoice_id': r'N° de facture\s*:\s*(\d{14})'
+            }
+    
+    zip_list = []
+    if input_path.is_file() and input_path.suffix == '.zip':
+        zip_list = [input_path]
+    elif input_path.is_dir():
+        zip_list = list(input_path.glob('*.zip'))
+
+    if not zip_list:
+        console.print("Aucun fichier zip trouvé. Étape ignorée.", style="yellow")
+    else:
+        for zip_path in zip_list:
+            batch_dir = atelier_dir / zip_path.stem
+            batch_dir.mkdir(exist_ok=True)
+            console.print(Panel.fit(f"Traitement commencé pour [bold]{zip_path}[/bold]", style="green"))
+            group_pdfs, individual_pdfs, errors = process_with_rich_progress(zip_path, indiv_dir, batch_dir, regex_dict, console)
+            
+            result_panel = Panel(
+                f"""
+                [bold green]Processing Results:[/bold green]
+                Number of Group PDFs: {len(group_pdfs)}
+                Number of Individual PDFs: {len(individual_pdfs)}
+                Number of Errors: {len(errors)}
+
+                """,
+                title=f"Données extraites de {zip_path.name}",
+            )
+
+            console.print(result_panel)
 def main():
     parser = argparse.ArgumentParser(description="Traitement des factures")
     parser.add_argument("atelier_path", type=str, help="Chemin du répertoire atelier")
@@ -112,51 +149,11 @@ def main():
 
     # =======================Étape 1: Traitement du zip d'entrée=======================
     console.print(Panel.fit("Étape 1: Traitement des entrées", style="bold magenta"))
-    regex_dict = {
-                'date': r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})',
-                'client_name': r'Nom et Prénom ou\s* Raison Sociale :\s*(.*)',
-                'group_name': r'Regroupement de facturation\s*:\s*\((.*?)\)',
-                'pdl': r'Référence PDL : (\d{14})',
-                'invoice_id': r'N° de facture\s*:\s*(\d{14})'
-            }
-
-    if args.input:
-        input_path = Path(args.input)
-        zip_list = []
-        if input_path.is_file() and input_path.suffix == '.zip':
-            zip_list = [input_path]
-        elif input_path.is_dir():
-            zip_list = list(input_path.glob('*.zip'))
-
-        if not zip_list:
-            console.print("Aucun fichier zip trouvé. Étape ignorée.", style="yellow")
-        else:
-            for zip_path in zip_list:
-                batch_dir = atelier_dir / zip_path.stem
-                batch_dir.mkdir(exist_ok=True)
-                console.print(Panel.fit(f"Traitement commencé pour [bold]{zip_path}[/bold]", style="green"))
-                group_pdfs, individual_pdfs, errors = process_with_rich_progress(zip_path, indiv_dir, batch_dir, regex_dict, console)
-                
-                result_panel = Panel(
-                    f"""
-                    [bold green]Processing Results:[/bold green]
-                    Number of Group PDFs: {len(group_pdfs)}
-                    Number of Individual PDFs: {len(individual_pdfs)}
-                    Number of Errors: {len(errors)}
-
-                    """,
-                    title=f"Données extraites de {zip_path.name}",
-                )
-
-                console.print(result_panel)
-
-
-    #console.print(f"Traitement de tous les fichiers zip terminé.", style="bold green")
-
+    process_inputs(Path(args.input), atelier_dir, indiv_dir, console)
 
     # =======================Étape 2: Liste des dossiers dans l'atelier================
     console.print(Panel.fit("Étape 2: Liste des dossiers dans l'atelier", style="bold magenta"))
-    subdirs = [d for d in atelier_dir.iterdir() if d.is_dir() and d.name not in ['group', 'indiv', 'group_mono']]
+    subdirs = [d for d in atelier_dir.iterdir() if d.is_dir() and d.name not in ['group', 'indiv']]
     console.print("Dossiers trouvés :", style="cyan")
     for d in subdirs:
         console.print(f"  - {d.name}", style="cyan")
@@ -164,15 +161,20 @@ def main():
     # =======================Étape 3 : Traitement des dossiers=========================
     batch_status = {}
     for subdir in subdirs:
-        batch_status[subdir] = {'fusion': False, 'facturx': False}
+        # ===================Prep Étape 3 : suppr dossiers si nécessaire================
+
+
+        # ===================Étape 3A : Fusion des factures=============================
+        console.print("Étape 3A : Fusion des factures", style="yellow")
+        # pour chaque dossier, on crée un sous-dossier group_mult et group_mono
+        # dans lequels on va respectivement générer les factures regroupement et les factures regroupement mono PDL
         console.print(Panel.fit(f"Traitement du dossier : {subdir.name}", style="bold blue"))
+        batch_status[subdir] = {'fusion': False, 'facturx': False}
         group_mult_dir = subdir / 'group_mult'
         group_mono_dir = subdir / 'group_mono'
         group_mult_dir.mkdir(exist_ok=True)
         group_mono_dir.mkdir(exist_ok=True)
         xlsx_file = subdir / f"{subdir.name}.xlsx"
-        # ===================Étape 3A : Fusion des factures=============================
-        console.print("Étape 3A : Fusion des factures", style="yellow")
 
         if xlsx_file.exists():
             
@@ -192,8 +194,12 @@ def main():
             batch_status[subdir]['fusion'] = True
         else:
             console.print(f"Fichier Excel [bold]{xlsx_file.name}[/bold] non trouvé. Fusion ignorée.", style="red")
-        # ===================Étape 3B : Création du zip avec facturix====================
-        console.print("Étape 3B : Création du zip avec facturix", style="yellow")
+        
+        # ===================Étape 3B : Création des factures factur-x====================
+        console.print("Étape 3B : Création des factures factur-x", style="yellow")
+
+        # Plusieurs sous-étapes ici :
+        
         bt_csv_files = list(subdir.glob("BT*.csv"))
         pdfa3_dir = subdir / "pdf3a"
         facturx_dir = subdir / "facturx"
