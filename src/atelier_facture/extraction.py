@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable, Any
 from pandas import DataFrame
 
+from pdf_utils import remplacer_texte_doc, caviarder_texte_doc, ajouter_ligne_regroupement_doc, apply_pdf_transformations
 logger = logging.getLogger(__name__)
 
 def extract_nested_pdfs(input_path: Path) -> Path:
@@ -168,7 +169,7 @@ def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path,
         metadata = {
             '/Title': f"Facture {invoice_id} pour {client_name}",
             '/ClientName': client_name,
-            '/GroupName': group_name,
+            '/GroupName': group_name if group_name is not None else '',
             '/CreationDate': date,
             #'/Subject': client_name,
             '/Application': 'atelier-facture',
@@ -304,6 +305,15 @@ def process_zipped_pdfs(
             indivs += indiv
             errors += error
 
+        for pdf in groups+indivs:
+            transformations = [
+                (remplacer_texte_doc, "Votre espace client  : https://client.enargia.eus", "Votre espace client : https://suiviconso.enargia.eus"),
+                (caviarder_texte_doc, "Votre identifiant :", 290, 45),
+                (ajouter_ligne_regroupement_doc,)
+                # Add more transformations as needed
+            ]
+
+            apply_pdf_transformations(pdf, pdf, transformations)
         return groups, indivs, errors
     finally:
         shutil.rmtree(temp_dir)  # Clean up temp directory
