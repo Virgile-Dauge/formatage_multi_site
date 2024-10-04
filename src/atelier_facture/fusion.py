@@ -229,7 +229,12 @@ def export_tables_as_pdf(groups: list[str], merge_dir: Path):
 def create_grouped_invoices(df: DataFrame, indiv_dir: Path, group_dir: Path, merge_dir: Path) -> list[Path]:
     """
     Crée des factures groupées à partir des données fournies.
-
+    1. Détecte les groupes avec plusieurs PDLs.
+    2. Trie le fichier Excel par groupement.
+    3. Exporte les tables Excel en fichiers PDF.
+    4. Fusionne les factures individuelles et les factures de regroupement,
+       pour créer une facture de regroupement détaillée.
+    
     Paramètres:
     df (DataFrame): Le DataFrame contenant les données des factures.
     indiv_dir (Path): Le chemin vers le répertoire contenant les factures unitaires.
@@ -270,7 +275,21 @@ def create_grouped_invoices(df: DataFrame, indiv_dir: Path, group_dir: Path, mer
 def normalize(string: str) -> str:
     return str(string).replace(" ", "").replace("-", "").lower()
 
-def create_grouped_single_invoice(df: DataFrame, indiv_dir: Path, output_dir: Path) -> Path:
+def create_grouped_single_invoice(df: DataFrame, indiv_dir: Path, output_dir: Path):
+    """
+    Crée des factures groupées pour les groupes mono pdl.
+
+    Cette fonction identifie les groupes avec une seule ligne dans le DataFrame,
+    ajoute une ligne de groupement dans le PDF de facture correspondant,
+    trouvé parmis les factures individuelles,
+    et renomme le fichier selon le format attendu pour les groupements.
+
+    Args:
+        df (DataFrame): Le DataFrame contenant les données des factures.
+        indiv_dir (Path): Le répertoire contenant les factures individuelles.
+        output_dir (Path): Le répertoire de sortie pour les factures groupées.
+
+    """
     # Detect groups with only one line in df
     single_line_groups = df.groupby('groupement').filter(lambda x: len(x) == 1)
     # Remove 'nan' group if it exists
