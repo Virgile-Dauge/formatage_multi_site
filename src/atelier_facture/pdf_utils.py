@@ -1,6 +1,8 @@
 from pathlib import Path
 import io
 import pymupdf
+import os
+import tempfile
 
 from pymupdf import Document
 def extraire_polices_pdf(fichier_pdf):
@@ -51,7 +53,7 @@ def store_extended_metadata(doc, metadata: dict[str, str]):
     for key, value in metadata.items():
         # add some private information
         doc.xref_set_key(xref, key, pymupdf.get_pdf_str(value))
-def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name : str, fontname : str="hebo", fontsize : int=11):
+def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name : str, cible:str='Votre espace client :', fontname : str="hebo", fontsize : int=11):
     """
     Ajoute une ligne de regroupement à un fichier PDF existant.
 
@@ -66,39 +68,6 @@ def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name 
     nouveau dossier nommé "groupement_facture_unique" situé dans le même répertoire
     que le fichier d'entrée.
     """
-    
-    # pymupdf.Base14_fontdict pour avoir les polices supportées
-    def obtenir_lignes_regroupement(texte_regroupement: str, fontname: str, fontsize: int, max_largeur: int=500) -> list[str]:
-        """
-        Divise le texte de regroupement en plusieurs lignes si nécessaire pour s'adapter à la largeur maximale spécifiée.
-
-        Paramètres:
-        texte_regroupement (str): Le texte de regroupement à ajouter.
-        fontname (str): Le nom de la police à utiliser pour le texte ajouté.
-        fontsize (int): La taille de la police à utiliser pour le texte ajouté.
-        max_largeur (int): La largeur maximale autorisée pour une ligne de texte. Par défaut 500.
-
-        Retourne:
-        list[str]: Une liste de lignes de texte adaptées à la largeur maximale spécifiée.
-        """
-        
-        lignes = []
-        # Vérifier si le texte de regroupement est trop long pour une seule ligne
-        if pymupdf.get_text_length(texte_regroupement, fontname=fontname, fontsize=fontsize) > max_largeur:
-            # Diviser le texte en plusieurs lignes
-            mots = texte_regroupement.split()
-            ligne = ""
-            for mot in mots:
-                if pymupdf.get_text_length(ligne + " " + mot, fontname=fontname, fontsize=fontsize) <= max_largeur:
-                    ligne += " " + mot
-                else:
-                    lignes.append(ligne.strip())
-                    ligne = mot
-            lignes.append(ligne.strip())
-        else:
-            lignes.append(texte_regroupement)
-        return lignes
-    
     texte_regroupement = f'Regroupement de facturation : ({group_name})'
     lignes = obtenir_lignes_regroupement(texte_regroupement, fontname, fontsize, max_largeur=290)
     # Ouvrir le fichier PDF
@@ -108,13 +77,10 @@ def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name 
     page = doc.load_page(0)
     texte = page.get_text("text")
     
-    # Définir le texte à rechercher
-    texte_a_rechercher = "Votre identifiant :"
-    
     # Vérifier si le texte est présent dans la page
-    if texte_a_rechercher in texte:
+    if cible in texte:
         # Rechercher la position du texte
-        zones_texte = page.search_for(texte_a_rechercher)
+        zones_texte = page.search_for(cible)
         
         interligne = 10.9
         # Ajouter la ligne spécifique en dessous du texte trouvé
@@ -188,26 +154,22 @@ def ajouter_ligne_regroupement_doc(doc, cible:str = 'Votre espace client :', fon
     metadata = get_extended_metadata(doc)
     if not "GroupName" in metadata:
         return
-    group = metadata["GroupName"]
+    group = metadata.get('GroupName', '')
+    
     if group == '':
         return
-    
-    print(group)
     texte_regroupement = f'Regroupement de facturation : ({group})'
     lignes = obtenir_lignes_regroupement(texte_regroupement, fontname, fontsize, max_largeur=290)
-    print(lignes)
+    
     # Charger la première page uniquement
     page = doc.load_page(0)
     texte = page.get_text("text")
-    
-    # Définir le texte à rechercher
-    texte_a_rechercher = cible
-    
+    #print(texte)
     # Vérifier si le texte est présent dans la page
-    if texte_a_rechercher in texte:
+    if cible in texte:
         # Rechercher la position du texte
-        zones_texte = page.search_for(texte_a_rechercher)
-        
+        zones_texte = page.search_for(cible)
+        print(zones_texte)
         interligne = 12
         # Ajouter la ligne spécifique en dessous du texte trouvé
         for rect in zones_texte:
@@ -239,29 +201,57 @@ def caviarder_texte_doc(doc, cible, x=None, y=None):
                 page.add_redact_annot(rect)
             page.apply_redactions()
 
+# def apply_pdf_transformations(input_pdf_path, output_pdf_path, transformations):
+#     """
+#     Apply a series of transformations to a PDF file.
+
+#     Args:
+#     input_pdf_path (str): Path to the input PDF file.
+#     output_pdf_path (str): Path where the transformed PDF will be saved.
+#     transformations (list): A list of transformation functions to apply.
+
+#     Each transformation function should take a PyMuPDF document object as its first argument,
+#     and any additional arguments specific to that transformation.
+#     """
+#     # Open the PDF
+#     doc = pymupdf.open(input_pdf_path)
+
+
+#     # Apply each transformation
+#     for transform_func, *args in transformations:
+#         transform_func(doc, *args)
+
+#     # Save the transformed PDF
+#     doc.save(output_pdf_path)
+#     doc.close()
+
 def apply_pdf_transformations(input_pdf_path, output_pdf_path, transformations):
     """
     Apply a series of transformations to a PDF file.
-
-    Args:
-    input_pdf_path (str): Path to the input PDF file.
-    output_pdf_path (str): Path where the transformed PDF will be saved.
-    transformations (list): A list of transformation functions to apply.
-
-    Each transformation function should take a PyMuPDF document object as its first argument,
-    and any additional arguments specific to that transformation.
     """
     # Open the PDF
     doc = pymupdf.open(input_pdf_path)
-
 
     # Apply each transformation
     for transform_func, *args in transformations:
         transform_func(doc, *args)
 
-    # Save the transformed PDF
-    doc.save(output_pdf_path)
-    doc.close()
+    # If input and output paths are the same, use a temporary file
+    if input_pdf_path == output_pdf_path:
+        # Create a temporary file in the same directory as the input file
+        with tempfile.NamedTemporaryFile(delete=False, dir=os.path.dirname(input_pdf_path), suffix='.pdf') as tmp_file:
+            temp_output_path = tmp_file.name
+
+        # Save to the temporary file
+        doc.save(temp_output_path)
+        doc.close()
+        
+        # Replace the original file with the temp file
+        os.replace(temp_output_path, input_pdf_path)
+    else:
+        # Save directly to the output path if it's different from the input
+        doc.save(output_pdf_path)
+        doc.close()
 
 if __name__ == "__main__":
     import argparse
@@ -275,7 +265,7 @@ if __name__ == "__main__":
 
     input_pdf = Path(args.pdf_path).expanduser()
     output_pdf = input_pdf.parent / f"replaced_{input_pdf.name}"
-    print(output_pdf)
+    
     #remplacer_texte_pdf(args.pdf_path, output_pdf, "Votre espace client  : https://client.enargia.eus", "Votre espace client : suiviconso.enargia.eus")
     transformations = [
         (remplacer_texte_doc, "Votre espace client  : https://client.enargia.eus", "Votre espace client : https://suiviconso.enargia.eus"),
@@ -288,7 +278,7 @@ if __name__ == "__main__":
 
     doc = pymupdf.open(output_pdf)
     metadata = get_extended_metadata(doc)
-    print(metadata)
+    
     # Exemple d'utilisation
     # polices = extraire_polices_pdf(args.pdf_path)
 
@@ -296,5 +286,5 @@ if __name__ == "__main__":
     # for police in polices:
     #     print(police)
 
-    #group = "GROUP - NAME"
-    #ajouter_ligne_regroupement(args.pdf_path, f'Regroupement de facturation : ({group})')
+    group = "GROUP - NAME"
+    ajouter_ligne_regroupement(input_pdf, input_pdf.parent, 'COUCOU')
