@@ -6,19 +6,20 @@ import argparse
 from pathlib import Path
 import pandas as pd
 from pandas import DataFrame
-import fitz
-import pikepdf
+
 import shutil 
 from rich.console import Console
 from rich.panel import Panel
 from rich.logging import RichHandler
 
+from facturix import process_invoices
+
 # local imports
 from rich_components import process_with_rich_progress, rich_status_table, rich_directory_tree 
 from fusion import create_grouped_invoices, create_grouped_single_invoice
 from empaquetage import extract_metadata_and_update_df
+from pdf_utils import compress_pdfs
 
-from facturix import process_invoices
 
 # Configuration du logger pour utiliser Rich
 logging.basicConfig(
@@ -27,43 +28,8 @@ logging.basicConfig(
     datefmt="[%X]",
     handlers=[RichHandler()]
 )
-logger = logging.getLogger()
-
-# def compress_pdfs(pdf_files: list[Path], output_dir: Path):
-#     """
-#     Compresse une liste de fichiers PDF et les enregistre dans un répertoire de sortie.
-
-#     Paramètres:
-#     pdf_files (list[Path]): Liste des chemins des fichiers PDF à compresser.
-#     output_dir (Path): Chemin du répertoire où les fichiers PDF compressés seront enregistrés.
-#     """
-#     output_dir.mkdir(parents=True, exist_ok=True)
-#     for pdf_file in pdf_files:
-#         doc = fitz.open(pdf_file)
-#         if not doc.page_count == 0:
-#             doc.save(output_dir / pdf_file.name, garbage=4, deflate=True)
-#             doc.close()
-def compress_pdfs(pdf_files: list[Path], output_dir: Path):
-    """
-    Compresse une liste de fichiers PDF en compressant les streams.
-
-    Paramètres:
-    pdf_files (list[Path]): Liste des chemins des fichiers PDF à compresser.
-    output_dir (Path): Chemin du répertoire où les fichiers PDF compressés seront enregistrés.
-    """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    for pdf_file in pdf_files:
-        output_file = output_dir / pdf_file.name
-        
-        try:
-            with pikepdf.Pdf.open(pdf_file) as pdf:
-                pdf.save(output_file, compress_streams=True)
-            
-            logging.debug(f"Compressed {pdf_file.name} successfully.")
-        except Exception as e:
-            logging.error(f"Error compressing {pdf_file.name}: {str(e)}")
-        
+logger = logging.getLogger(__name__)
+      
 def check_missing_pdl(df: DataFrame, pdl_dir: Path) -> set[str]:
     """
     Vérifie que tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles.

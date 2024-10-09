@@ -1,9 +1,34 @@
 from pathlib import Path
-import pymupdf
+
 import os
 import tempfile
+import pikepdf
+import pymupdf
 
+import logging
+_logger = logging.getLogger(__name__)
 # ====================== Utilitaires =======================
+def compress_pdfs(pdf_files: list[Path], output_dir: Path):
+    """
+    Compresse une liste de fichiers PDF en compressant les streams.
+
+    Paramètres:
+    pdf_files (list[Path]): Liste des chemins des fichiers PDF à compresser.
+    output_dir (Path): Chemin du répertoire où les fichiers PDF compressés seront enregistrés.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    for pdf_file in pdf_files:
+        output_file = output_dir / pdf_file.name
+        
+        try:
+            with pikepdf.Pdf.open(pdf_file) as pdf:
+                pdf.save(output_file, compress_streams=True)
+            
+            _logger.debug(f"Compressed {pdf_file.name} successfully.")
+        except Exception as e:
+            _logger.error(f"Error compressing {pdf_file.name}: {str(e)}")  
+
 def get_extended_metadata(doc) -> dict[str, str]:
     """
     Extracts extended metadata from a PDF document.
