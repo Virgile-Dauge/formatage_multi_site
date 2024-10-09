@@ -8,6 +8,7 @@ import pandas as pd
 from pandas import DataFrame
 import fitz
 import pikepdf
+import shutil 
 from rich.console import Console
 from rich.panel import Panel
 from rich.logging import RichHandler
@@ -61,7 +62,8 @@ def compress_pdfs(pdf_files: list[Path], output_dir: Path):
             
             logging.debug(f"Compressed {pdf_file.name} successfully.")
         except Exception as e:
-            logging.error(f"Error compressing {pdf_file.name}: {str(e)}")         
+            logging.error(f"Error compressing {pdf_file.name}: {str(e)}")
+        
 def check_missing_pdl(df: DataFrame, pdl_dir: Path) -> set[str]:
     """
     Vérifie que tous les PDLs présents dans 'lien.xlsx' sont dans les factures individuelles.
@@ -131,9 +133,7 @@ def main():
     parser = argparse.ArgumentParser(description="Traitement des factures")
     parser.add_argument("atelier_path", type=str, help="Chemin du répertoire atelier")
     parser.add_argument("-i", "--input", type=str, help="Chemin vers le fichier zip d'entrée, ou le dossier de zips d'entrée.")
-    parser.add_argument("-ff", "--forcer_fusion", action="store_true", help="Forcer la fusion des factures même si le dossier existe déjà")
-    parser.add_argument("-fz", "--forcer_zip", action="store_true", help="Forcer la création du zip même si le dossier existe déjà")
-    parser.add_argument("-fp", "--forcer_pdfa3", action="store_true", help="Forcer la generation des pdf/A-3")
+    parser.add_argument("-f", "--force", action="store_true", help="Supprime tous les fichiers intermédiaires (pas les fichiers bruts extraits)")
     args = parser.parse_args()
     console = Console()
     # =======================Étape 0: Définition du répertoire de travail==============
@@ -162,8 +162,18 @@ def main():
     # =======================Étape 3 : Traitement des dossiers=========================
     batch_status = {}
     for subdir in subdirs:
+        
         # ===================Prep Étape 3 : suppr dossiers si nécessaire================
-
+        if args.force:
+            # Supprimer tous les dossiers dans subdir
+            for item in subdir.iterdir():
+                if item.is_dir():
+                    shutil.rmtree(item)
+            
+            # Supprimer BT_updated s'il existe
+            bt_updated_path = subdir / 'BT_updated'
+            if bt_updated_path.exists():
+                shutil.rmtree(bt_updated_path)
 
         # ===================Étape 3A : Fusion des factures=============================
         console.print("Étape 3A : Fusion des factures", style="yellow")
@@ -179,7 +189,7 @@ def main():
 
         if xlsx_file.exists():
             
-            if not any(group_mult_dir.glob('*.pdf')) or args.forcer_fusion:
+            if not any(group_mult_dir.glob('*.pdf')):
                 df = pd.read_excel(xlsx_file, sheet_name='Sheet1')
                 # Remplacer les tirets moyens par des tirets courts
                 df = df.replace('–', '-', regex=True)
@@ -208,11 +218,12 @@ def main():
         compressed_facturx_dir.mkdir(exist_ok=True)
         bt_up_path = subdir / "BT_updated.csv"
 
-        conform_pdf : bool = not bt_up_path.exists() or args.forcer_pdfa3
+        conform_pdf : bool = not bt_up_path.exists()
         if bt_csv_files and bt_csv_files[0].exists():
             bt_df = pd.read_csv(bt_csv_files[0]).replace('–', '-', regex=True)
             pdfs = list(group_mult_dir.glob('*.pdf')) + list(group_mono_dir.glob('*.pdf'))
             bt_df = extract_metadata_and_update_df(pdfs, bt_df)
+            print(bt_df)
             bt_df.to_csv(bt_up_path, index=False)
 
 
