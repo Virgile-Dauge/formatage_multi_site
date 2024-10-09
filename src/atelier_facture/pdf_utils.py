@@ -1,32 +1,9 @@
 from pathlib import Path
-import io
 import pymupdf
 import os
 import tempfile
 
-from pymupdf import Document
-def extraire_polices_pdf(fichier_pdf):
-    # Ouvrir le fichier PDF
-    doc = pymupdf.open(fichier_pdf)
-    polices = set()  # Utilisation d'un set pour éviter les doublons
-
-    # Parcourir chaque page
-    for page_num in range(doc.page_count):
-        page = doc.load_page(page_num)
-        # Extraire le texte avec ses propriétés
-        blocs = page.get_text("dict")['blocks']
-        
-        # Parcourir chaque bloc de texte pour extraire les polices
-        for bloc in blocs:
-            if "lines" in bloc:
-                for ligne in bloc["lines"]:
-                    for span in ligne["spans"]:
-                        font = span["font"]  # Extraire le nom de la police
-                        polices.add(font)
-
-    doc.close()
-    return polices
-
+# ====================== Utilitaires =======================
 def get_extended_metadata(doc) -> dict[str, str]:
     """
     Extracts extended metadata from a PDF document.
@@ -53,6 +30,39 @@ def store_extended_metadata(doc, metadata: dict[str, str]):
     for key, value in metadata.items():
         # add some private information
         doc.xref_set_key(xref, key, pymupdf.get_pdf_str(value))
+
+def obtenir_lignes_regroupement(texte_regroupement: str, fontname: str, fontsize: int, max_largeur: int=500) -> list[str]:
+    """
+    Divise le texte de regroupement en plusieurs lignes si nécessaire pour s'adapter à la largeur maximale spécifiée.
+
+    Paramètres:
+    texte_regroupement (str): Le texte de regroupement à ajouter.
+    fontname (str): Le nom de la police à utiliser pour le texte ajouté.
+    fontsize (int): La taille de la police à utiliser pour le texte ajouté.
+    max_largeur (int): La largeur maximale autorisée pour une ligne de texte. Par défaut 500.
+
+    Retourne:
+    list[str]: Une liste de lignes de texte adaptées à la largeur maximale spécifiée.
+    """
+    
+    lignes = []
+    # Vérifier si le texte de regroupement est trop long pour une seule ligne
+    if pymupdf.get_text_length(texte_regroupement, fontname=fontname, fontsize=fontsize) > max_largeur:
+        # Diviser le texte en plusieurs lignes
+        mots = texte_regroupement.split()
+        ligne = ""
+        for mot in mots:
+            if pymupdf.get_text_length(ligne + " " + mot, fontname=fontname, fontsize=fontsize) <= max_largeur:
+                ligne += " " + mot
+            else:
+                lignes.append(ligne.strip())
+                ligne = mot
+        lignes.append(ligne.strip())
+    else:
+        lignes.append(texte_regroupement)
+    return lignes
+
+# ============== Opérations uniques ========================
 def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name : str, cible:str='Votre espace client :', fontname : str="hebo", fontsize : int=11):
     """
     Ajoute une ligne de regroupement à un fichier PDF existant.
@@ -104,37 +114,7 @@ def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name 
     doc.save(output_pdf_path)
     doc.close()
 
-
-def obtenir_lignes_regroupement(texte_regroupement: str, fontname: str, fontsize: int, max_largeur: int=500) -> list[str]:
-    """
-    Divise le texte de regroupement en plusieurs lignes si nécessaire pour s'adapter à la largeur maximale spécifiée.
-
-    Paramètres:
-    texte_regroupement (str): Le texte de regroupement à ajouter.
-    fontname (str): Le nom de la police à utiliser pour le texte ajouté.
-    fontsize (int): La taille de la police à utiliser pour le texte ajouté.
-    max_largeur (int): La largeur maximale autorisée pour une ligne de texte. Par défaut 500.
-
-    Retourne:
-    list[str]: Une liste de lignes de texte adaptées à la largeur maximale spécifiée.
-    """
-    
-    lignes = []
-    # Vérifier si le texte de regroupement est trop long pour une seule ligne
-    if pymupdf.get_text_length(texte_regroupement, fontname=fontname, fontsize=fontsize) > max_largeur:
-        # Diviser le texte en plusieurs lignes
-        mots = texte_regroupement.split()
-        ligne = ""
-        for mot in mots:
-            if pymupdf.get_text_length(ligne + " " + mot, fontname=fontname, fontsize=fontsize) <= max_largeur:
-                ligne += " " + mot
-            else:
-                lignes.append(ligne.strip())
-                ligne = mot
-        lignes.append(ligne.strip())
-    else:
-        lignes.append(texte_regroupement)
-    return lignes
+# ============== Opérations chainables =====================
 def ajouter_ligne_regroupement_doc(doc, cible:str = 'Votre espace client :', fontname : str="hebo", fontsize : int=11):
     """
     Ajoute une ligne de regroupement à un fichier PDF existant.
@@ -164,12 +144,11 @@ def ajouter_ligne_regroupement_doc(doc, cible:str = 'Votre espace client :', fon
     # Charger la première page uniquement
     page = doc.load_page(0)
     texte = page.get_text("text")
-    #print(texte)
+
     # Vérifier si le texte est présent dans la page
     if cible in texte:
         # Rechercher la position du texte
         zones_texte = page.search_for(cible)
-        print(zones_texte)
         interligne = 12
         # Ajouter la ligne spécifique en dessous du texte trouvé
         for rect in zones_texte:
@@ -201,30 +180,7 @@ def caviarder_texte_doc(doc, cible, x=None, y=None):
                 page.add_redact_annot(rect)
             page.apply_redactions()
 
-# def apply_pdf_transformations(input_pdf_path, output_pdf_path, transformations):
-#     """
-#     Apply a series of transformations to a PDF file.
-
-#     Args:
-#     input_pdf_path (str): Path to the input PDF file.
-#     output_pdf_path (str): Path where the transformed PDF will be saved.
-#     transformations (list): A list of transformation functions to apply.
-
-#     Each transformation function should take a PyMuPDF document object as its first argument,
-#     and any additional arguments specific to that transformation.
-#     """
-#     # Open the PDF
-#     doc = pymupdf.open(input_pdf_path)
-
-
-#     # Apply each transformation
-#     for transform_func, *args in transformations:
-#         transform_func(doc, *args)
-
-#     # Save the transformed PDF
-#     doc.save(output_pdf_path)
-#     doc.close()
-
+# ============== Chainage des Opérations ===================
 def apply_pdf_transformations(input_pdf_path, output_pdf_path, transformations):
     """
     Apply a series of transformations to a PDF file.
@@ -253,22 +209,19 @@ def apply_pdf_transformations(input_pdf_path, output_pdf_path, transformations):
         doc.save(output_pdf_path)
         doc.close()
 
+
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Remplacer du texte dans un fichier PDF")
     parser.add_argument("pdf_path", type=str, help="Le chemin du fichier PDF à traiter")
-    # parser.add_argument("texte_a_remplacer", type=str, help="Le texte à remplacer dans le fichier PDF")
-    # parser.add_argument("nouveau_texte", type=str, help="Le nouveau texte à insérer dans le fichier PDF")
-    # parser.add_argument("output_path", type=str, help="Le chemin du fichier PDF de sortie")
     args = parser.parse_args()
 
     input_pdf = Path(args.pdf_path).expanduser()
     output_pdf = input_pdf.parent / f"replaced_{input_pdf.name}"
     
-    #remplacer_texte_pdf(args.pdf_path, output_pdf, "Votre espace client  : https://client.enargia.eus", "Votre espace client : suiviconso.enargia.eus")
     transformations = [
-        (remplacer_texte_doc, "Votre espace client  : https://client.enargia.eus", "Votre espace client : https://suiviconso.enargia.eus"),
+        (remplacer_texte_doc, "Votre espace client  : https://client.eqwasd.fr", "Votre espace client : https://qwedda.adssad.fr"),
         (caviarder_texte_doc, "Votre identifiant :", 290, 45),
         (ajouter_ligne_regroupement_doc,)
         # Add more transformations as needed
@@ -278,13 +231,6 @@ if __name__ == "__main__":
 
     doc = pymupdf.open(output_pdf)
     metadata = get_extended_metadata(doc)
-    
-    # Exemple d'utilisation
-    # polices = extraire_polices_pdf(args.pdf_path)
-
-    # print("Polices utilisées dans le PDF :")
-    # for police in polices:
-    #     print(police)
 
     group = "GROUP - NAME"
     ajouter_ligne_regroupement(input_pdf, input_pdf.parent, 'COUCOU')
