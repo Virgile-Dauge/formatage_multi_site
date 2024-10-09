@@ -37,8 +37,8 @@ def extract_metadata_and_update_df(pdf_files: list[Path], df: pd.DataFrame) -> p
     df_copy['group'] = df_copy['group'].fillna('').astype(str).str.strip()
     df_copy['pdl'] = df_copy['pdl'].fillna('').astype(str).str.strip()
 
-    int_columns = ['BT-1', 'BT-13']
-    for col in int_columns:
+    id_columns = ['BT-1', 'BT-13']
+    for col in id_columns:
         if col in df_copy.columns:
             df_copy[col] = (df_copy[col]
                 .apply(lambda x: '' if pd.isna(x) else str(x))
@@ -59,10 +59,11 @@ def extract_metadata_and_update_df(pdf_files: list[Path], df: pd.DataFrame) -> p
         if not mask.any():
             mask = df_copy['pdl'].fillna('').astype(str).str.strip() == pdl
         
-        
-        # First, convert the entire 'BT-1' column to string type
-        df_copy['BT-1'] = df_copy['BT-1'].astype(str).apply(lambda x: x.rstrip('.0'))
-        df_copy.loc[mask, 'BT-1'] = str(int(invoice_id))
+        def format_id(x, width:int=14) -> str:
+            return x if x == '' else str(x).rstrip('.0').zfill(width)
+
+        df_copy.loc[mask, 'BT-1'] = invoice_id
+        df_copy['BT-1'] = df_copy['BT-1'].apply(lambda x: format_id(x))
         df_copy.loc[mask, 'pdf'] = pdf_file
 
     return df_copy
