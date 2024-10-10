@@ -121,7 +121,7 @@ def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name 
         # Ajouter la ligne spécifique en dessous du texte trouvé
         for rect in zones_texte:
             for i, l in enumerate(lignes):
-                page.insert_text((rect.x0, rect.y0 + interligne*(2 + i)), l, fontsize=fontsize, fontname=fontname, color=(0, 0, 0))
+                page.insert_text((rect.x0, rect.y0 + interligne*(3 + i)), l, fontsize=fontsize, fontname=fontname, color=(0, 0, 0))
                     
     # Read metadata
     metadata = get_extended_metadata(doc)
@@ -178,7 +178,7 @@ def ajouter_ligne_regroupement_doc(doc, cible:str = 'Votre espace client :', fon
         # Ajouter la ligne spécifique en dessous du texte trouvé
         for rect in zones_texte:
             for i, l in enumerate(lignes):
-                page.insert_text((rect.x0, rect.y0 + interligne*(2 + i)), l, fontsize=fontsize, fontname=fontname, color=(0, 0, 0))
+                page.insert_text((rect.x0, rect.y0 + interligne*(3 + i)), l, fontsize=fontsize, fontname=fontname, color=(0, 0, 0))
                     
 def remplacer_texte_doc(doc, ancien_texte, nouveau_texte, fontname="hebo", fontsize=11):
     for page_num in range(doc.page_count):
