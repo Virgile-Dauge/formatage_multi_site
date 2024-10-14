@@ -1,11 +1,6 @@
-import os
 from pypdf import PdfReader
 import pandas as pd
-import numpy as np
 from pathlib import Path
-import logging
-
-logger = logging.getLogger(__name__)
 
 def extract_metadata_and_update_df(pdf_files: list[Path], df: pd.DataFrame) -> pd.DataFrame:
     """

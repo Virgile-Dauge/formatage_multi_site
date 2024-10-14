@@ -1,6 +1,4 @@
 import re
-import logging
-
 
 import argparse
 from pathlib import Path
@@ -10,7 +8,6 @@ from pandas import DataFrame
 import shutil 
 from rich.console import Console
 from rich.panel import Panel
-from rich.logging import RichHandler
 
 from facturix import process_invoices
 
@@ -20,15 +17,7 @@ from fusion import create_grouped_invoices, create_grouped_single_invoice
 from empaquetage import extract_metadata_and_update_df
 from pdf_utils import compress_pdfs
 
-
-# Configuration du logger pour utiliser Rich
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-    datefmt="[%X]",
-    handlers=[RichHandler()]
-)
-logger = logging.getLogger(__name__)
+from logger_config import setup_logger, logger
       
 def check_missing_pdl(df: DataFrame, pdl_dir: Path) -> set[str]:
     """
@@ -100,7 +89,11 @@ def main():
     parser.add_argument("atelier_path", type=str, help="Chemin du répertoire atelier")
     parser.add_argument("-i", "--input", type=str, help="Chemin vers le fichier zip d'entrée, ou le dossier de zips d'entrée.")
     parser.add_argument("-f", "--force", action="store_true", help="Supprime tous les fichiers intermédiaires (pas les fichiers bruts extraits)")
+    parser.add_argument('-v', '--verbose', action='count', default=0, help="Plus de logs (e.g., -v or -vv)")
     args = parser.parse_args()
+
+    # Configure the logger based on verbosity
+    setup_logger(args.verbose)
     console = Console()
     # =======================Étape 0: Définition du répertoire de travail==============
     console.print(Panel.fit("Étape 0: Définition du répertoire de travail", style="bold magenta"))
@@ -132,14 +125,23 @@ def main():
         # ===================Prep Étape 3 : suppr dossiers si nécessaire================
         if args.force:
             # Supprimer tous les dossiers dans subdir
-            for item in subdir.iterdir():
-                if item.is_dir():
-                    shutil.rmtree(item)
+            logger.info(f"Suppression des anciens résultats dans {subdir}.")
+            # Step 1: List and log directories
+            dirs_to_remove = [item for item in subdir.iterdir() if item.is_dir()]
+
+            # Log the directories marked for removal
+            for dir_path in dirs_to_remove:
+                logger.info(f"supp dossier: {dir_path}")
+
+            # Step 2: Delete the directories
+            for dir_path in dirs_to_remove:
+                shutil.rmtree(dir_path)
             
             # Supprimer BT_updated s'il existe
-            bt_updated_path = subdir / 'BT_updated'
+            bt_updated_path = subdir / 'BT_updated.csv'
             if bt_updated_path.exists():
-                shutil.rmtree(bt_updated_path)
+                logger.info(f"supp fichier : {bt_updated_path}")
+                bt_updated_path.unlink()
 
         # ===================Étape 3A : Fusion des factures=============================
         console.print("Étape 3A : Fusion des factures", style="yellow")
@@ -189,7 +191,6 @@ def main():
             bt_df = pd.read_csv(bt_csv_files[0]).replace('–', '-', regex=True)
             pdfs = list(group_mult_dir.glob('*.pdf')) + list(group_mono_dir.glob('*.pdf'))
             bt_df = extract_metadata_and_update_df(pdfs, bt_df)
-            print(bt_df)
             bt_df.to_csv(bt_up_path, index=False)
 
 

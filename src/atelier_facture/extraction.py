@@ -13,8 +13,7 @@ from typing import Callable, Any
 from pandas import DataFrame
 
 from pdf_utils import remplacer_texte_doc, caviarder_texte_doc, ajouter_ligne_regroupement_doc, apply_pdf_transformations
-logger = logging.getLogger(__name__)
-
+from logger_config import logger
 def extract_nested_pdfs(input_path: Path) -> Path:
     """
     Extracts all PDFs from nested zip files to a temporary directory.

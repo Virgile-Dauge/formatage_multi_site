@@ -5,8 +5,7 @@ import tempfile
 import pikepdf
 import pymupdf
 
-import logging
-_logger = logging.getLogger(__name__)
+from logger_config import logger
 # ====================== Utilitaires =======================
 def compress_pdfs(pdf_files: list[Path], output_dir: Path):
     """
@@ -25,9 +24,9 @@ def compress_pdfs(pdf_files: list[Path], output_dir: Path):
             with pikepdf.Pdf.open(pdf_file) as pdf:
                 pdf.save(output_file, compress_streams=True)
             
-            _logger.debug(f"Compressed {pdf_file.name} successfully.")
+            logger.debug(f"Compressed {pdf_file.name} successfully.")
         except Exception as e:
-            _logger.error(f"Error compressing {pdf_file.name}: {str(e)}")  
+            logger.error(f"Error compressing {pdf_file.name}: {str(e)}")  
 
 def get_extended_metadata(doc) -> dict[str, str]:
     """

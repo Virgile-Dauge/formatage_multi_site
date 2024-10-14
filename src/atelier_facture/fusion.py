@@ -9,16 +9,8 @@ from pypdf import PdfReader, PdfWriter
 
 from mpl import export_table_as_pdf
 from pdf_utils import ajouter_ligne_regroupement
-import logging
-from rich.logging import RichHandler
-# Configuration du logger pour utiliser Rich
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-    datefmt="[%X]",
-    handlers=[RichHandler()]
-)
-logger = logging.getLogger()
+
+from logger_config import logger
 
 def merge_pdfs_by_group(groups: list[str], merge_dir: Path) -> list[Path]:
     """
@@ -48,13 +40,16 @@ def merge_pdfs_by_group(groups: list[str], merge_dir: Path) -> list[Path]:
         
         merger = PdfWriter()
         
-        # Vérifier si le nombre de fichiers PDF correspond au nombre de PDLs + 2 (facture globale et tableau)
-        if len(pdf_files) != len(pdls) + 2:
-            logger.warning(f"Le nombre de fichiers PDF ({len(pdf_files)}) ne correspond pas au nombre de PDL ({len(pdls)}) pour le groupe {group}.")
+
         
         # Identifier les PDLs manquants
         pdf_pdls = [re.search(r'(\d{14})', pdf.stem).group(1) for pdf in pdf_files if re.search(r'(\d{14})', pdf.stem)]
         pdf_pdls = [pdl for pdl in pdf_pdls if pdl is not None]
+
+                # Vérifier si le nombre de fichiers PDF correspond au nombre de PDLs + 2 (facture globale et tableau)
+        if len(pdf_files) != len(pdls) + 2:
+            logger.warning(f"Le nombre de factures unitaires ({len(pdf_pdls)}) ne correspond pas au nombre de PDL ({len(pdls)}) pour le groupe {group}.")
+
         missing_pdls = set(pdls.astype(str)) - set(pdf_pdls)
         
         if missing_pdls:
