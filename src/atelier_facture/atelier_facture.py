@@ -182,25 +182,29 @@ def main():
         bt_csv_files = list(subdir.glob("BT*.csv"))
         pdfa3_dir = subdir / "pdf3a"
         facturx_dir = subdir / "facturx"
-        compressed_facturx_dir = subdir / "compressed_facturx"
-        compressed_facturx_dir.mkdir(exist_ok=True)
+        # compressed_facturx_dir = subdir / "compressed_facturx"
+        # compressed_facturx_dir.mkdir(exist_ok=True)
         bt_up_path = subdir / "BT_updated.csv"
 
-        conform_pdf : bool = not bt_up_path.exists()
+        conform_pdf : bool = not any(pdfa3_dir.glob('*.pdf'))
         if bt_csv_files and bt_csv_files[0].exists():
             bt_df = pd.read_csv(bt_csv_files[0]).replace('–', '-', regex=True)
             pdfs = list(group_mult_dir.glob('*.pdf')) + list(group_mono_dir.glob('*.pdf'))
             bt_df = extract_metadata_and_update_df(pdfs, bt_df)
             bt_df.to_csv(bt_up_path, index=False)
-
-
-            errors = process_invoices(bt_df, pdfa3_dir, facturx_dir, conform_pdf=conform_pdf)
-            compress_pdfs(list(Path(facturx_dir).glob('*.pdf')), compressed_facturx_dir)
-            console.print(f"Création du zip pour [bold]{subdir.name}[/bold]", style="green")
-            batch_status[subdir]['facturx'] = f'{len(bt_df)}/{len(bt_df)}'
         else:
             console.print(f"Fichier BT.csv non trouvé dans [bold]{subdir}[/bold]. Création du zip ignorée.", style="red")
             batch_status[subdir]['facturx'] = True
+
+        if not any(facturx_dir.glob('*.pdf')):
+            console.print(f"Création des Factur-X pour [bold]{subdir.name}[/bold]", style="green")
+            errors = process_invoices(bt_df, pdfa3_dir, facturx_dir, conform_pdf=conform_pdf)
+            batch_status[subdir]['facturx'] = f"{len(list(facturx_dir.glob('*.pdf')))}/{len(bt_df)}"
+
+        # if not any(compressed_facturx_dir.glob('*.pdf')):
+        #     #compress_pdfs(list(Path(facturx_dir).glob('*.pdf')), compressed_facturx_dir)
+        #     batch_status[subdir]['facturx'] = f'{len(facturx_dir.glob('*.pdf'))}/{len(bt_df)}'
+
 
 
     console.print(Panel.fit("Traitement terminé", style="bold green"))
