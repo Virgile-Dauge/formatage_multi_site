@@ -2,11 +2,48 @@ from pathlib import Path
 
 import os
 import tempfile
-import pikepdf
 import pymupdf
 
 from logger_config import logger
 # ====================== Utilitaires =======================
+
+def human_readable_size(size_in_bytes: int) -> str:
+    """Convert a size in bytes to a human-readable string."""
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size_in_bytes < 1024.0:
+            return f"{size_in_bytes:.2f} {unit}"
+        size_in_bytes /= 1024.0
+    return f"{size_in_bytes:.2f} PB"
+
+def compress_pdf(input_path: Path, output_path: Path):
+    """
+    Compress a PDF file using PyMuPDF.
+
+    :param input_path: Path to the input PDF file
+    :param output_path: Path to save the compressed PDF file
+    """
+    try:
+        doc = pymupdf.open(input_path)
+        doc.save(output_path, 
+                 garbage=4,  # clean up unreferenced objects
+                 deflate=True,  # compress streams
+                 deflate_images=True,
+                 clean=True,  # clean up redundant objects
+                 pretty=True,  # make PDF human-readable
+                 linear=True  # optimize for web viewing
+                 )
+        doc.close()
+
+        original_size = input_path.stat().st_size
+        compressed_size = output_path.stat().st_size
+        size_gained = original_size - compressed_size
+        compression_ratio = (1 - (compressed_size / original_size)) * 100
+
+        logger.debug(f"Compressed {input_path.name} ({compression_ratio:.2f}%).")
+
+    except Exception as e:
+        logger.error(f"Error compressing {input_path.name}: {str(e)}")
+
 def compress_pdfs(pdf_files: list[Path], output_dir: Path):
     """
     Compresse une liste de fichiers PDF en compressant les streams.
@@ -19,14 +56,7 @@ def compress_pdfs(pdf_files: list[Path], output_dir: Path):
     
     for pdf_file in pdf_files:
         output_file = output_dir / pdf_file.name
-        
-        try:
-            with pikepdf.Pdf.open(pdf_file) as pdf:
-                pdf.save(output_file, compress_streams=True)
-            
-            logger.debug(f"Compressed {pdf_file.name} successfully.")
-        except Exception as e:
-            logger.error(f"Error compressing {pdf_file.name}: {str(e)}")  
+        compress_pdf(pdf_file, output_file)
 
 def get_extended_metadata(doc) -> dict[str, str]:
     """
@@ -257,4 +287,7 @@ if __name__ == "__main__":
     metadata = get_extended_metadata(doc)
 
     group = "GROUP - NAME"
-    ajouter_ligne_regroupement(input_pdf, input_pdf.parent, 'COUCOU')
+    # ajouter_ligne_regroupement(input_pdf, input_pdf.parent, 'COUCOU')
+    original_filename = input_pdf.stem
+    compressed_file = input_pdf.parent / f"{original_filename}_compressed.pdf"
+    compress_pdf(input_pdf, compressed_file)
