@@ -19,7 +19,7 @@ def rich_status_table(batch_status: dict[dict[str, Any]])-> Table:
     table.add_column("Batch", style="cyan", no_wrap=True)
     table.add_column("Fusion", style="magenta")
     table.add_column("Facturx", style="magenta")
-    print(batch_status)
+    
     for batch, status in batch_status.items():
         fusion_status = "✅" if status.get('fusion') else "❌"
         facturx_status = "✅" if isinstance(status.get('facturx'), bool) else status.get('facturx')
