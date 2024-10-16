@@ -190,7 +190,7 @@ def main():
         conform_pdf : bool = not any(pdfa3_dir.glob('*.pdf'))
         bt_df = process_BT_csv(subdir)
         if bt_df is None:
-            console.print(f"Fichier BT.csv non trouvé dans [bold]{subdir}[/bold]. Création du zip ignorée.", style="red")
+            console.print(f"Fichier BT.csv non trouvé dans [bold]{subdir}[/bold]. Création des factures factur-x ignorée.", style="red")
             batch_status[subdir]['facturx'] = True
             continue
 
@@ -199,6 +199,9 @@ def main():
             errors = process_invoices(bt_df, pdfa3_dir, facturx_dir, conform_pdf=conform_pdf)
             batch_status[subdir]['facturx'] = f"{len(list(facturx_dir.glob('*.pdf')))}/{len(bt_df)}"
 
+            if errors:
+                logger.warning(f"Erreurs lors de la création des factures factur-x : {errors}")
+
         # if not any(compressed_facturx_dir.glob('*.pdf')):
         #     #compress_pdfs(list(Path(facturx_dir).glob('*.pdf')), compressed_facturx_dir)
         #     batch_status[subdir]['facturx'] = f'{len(facturx_dir.glob('*.pdf'))}/{len(bt_df)}'
@@ -206,19 +209,21 @@ def main():
     # =======================Étape 4: factures individuelles===============================
     console.print(Panel.fit("Étape 4 : Création des factures factur-x individuelles", style="bold magenta"))
     bt_up_path = indiv_dir / "BT_updated.csv"
-
-    bt_df = process_BT_csv(indiv_dir)
-
-    if bt_df is not None:
-        indiv_pdfa3_dir = indiv_dir / "pdf3a"
-        indiv_facturx_dir = indiv_dir / 'facturx'
-        indiv_pdfa3_dir.mkdir(exist_ok=True)
-        indiv_facturx_dir.mkdir(exist_ok=True)
+    if not bt_up_path.exists() or args.force:
+        bt_df = process_BT_csv(indiv_dir)
+    else:
+        bt_df = pd.read_csv(bt_up_path)
+    indiv_pdfa3_dir = indiv_dir / "pdf3a"
+    indiv_facturx_dir = indiv_dir / 'facturx'
+    indiv_pdfa3_dir.mkdir(exist_ok=True)
+    indiv_facturx_dir.mkdir(exist_ok=True)
+    if bt_df is not None and not any(indiv_facturx_dir.glob('*.pdf')):
         errors = process_invoices(bt_df, indiv_pdfa3_dir, indiv_facturx_dir, 
                                 conform_pdf=not any(indiv_pdfa3_dir.glob('*.pdf')))
-        print(errors)
+        if errors:
+            logger.warning(f"Erreurs lors de la création des factures individuelles : {errors}")
     console.print(Panel.fit("Traitement terminé", style="bold green"))
-    # =======================Étape %: état des lieux de l'atelier==========================
+    # =======================Étape 5: état des lieux de l'atelier==========================
     
     
     # tree = rich_directory_tree(atelier_dir, 2)
