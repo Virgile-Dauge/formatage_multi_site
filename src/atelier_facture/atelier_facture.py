@@ -14,7 +14,7 @@ from facturix import process_invoices
 # local imports
 from rich_components import process_with_rich_progress, rich_status_table, rich_directory_tree 
 from fusion import create_grouped_invoices, create_grouped_single_invoice
-from empaquetage import extract_metadata_and_update_df
+from empaquetage import process_BT_csv
 from pdf_utils import compress_pdfs
 
 from logger_config import setup_logger, logger
@@ -121,7 +121,7 @@ def main():
     # =======================Étape 3 : Traitement des dossiers=========================
     batch_status = {}
     for subdir in subdirs:
-        
+        console.print(Panel.fit(f"Traitement du dossier : {subdir.name}", style="bold blue"))
         # ===================Prep Étape 3 : suppr dossiers si nécessaire================
         if args.force:
             # Supprimer tous les dossiers dans subdir
@@ -147,7 +147,7 @@ def main():
         console.print("Étape 3A : Fusion des factures", style="yellow")
         # pour chaque dossier, on crée un sous-dossier group_mult et group_mono
         # dans lequels on va respectivement générer les factures regroupement et les factures regroupement mono PDL
-        console.print(Panel.fit(f"Traitement du dossier : {subdir.name}", style="bold blue"))
+        
         batch_status[subdir] = {'fusion': False, 'facturx': False}
         group_mult_dir = subdir / 'group_mult'
         group_mono_dir = subdir / 'group_mono'
@@ -173,6 +173,7 @@ def main():
             batch_status[subdir]['fusion'] = True
         else:
             console.print(f"Fichier Excel [bold]{xlsx_file.name}[/bold] non trouvé. Fusion ignorée.", style="red")
+            continue
         
         # ===================Étape 3B : Création des factures factur-x====================
         console.print("Étape 3B : Création des factures factur-x", style="yellow")
@@ -187,14 +188,11 @@ def main():
         bt_up_path = subdir / "BT_updated.csv"
 
         conform_pdf : bool = not any(pdfa3_dir.glob('*.pdf'))
-        if bt_csv_files and bt_csv_files[0].exists():
-            bt_df = pd.read_csv(bt_csv_files[0]).replace('–', '-', regex=True)
-            pdfs = list(group_mult_dir.glob('*.pdf')) + list(group_mono_dir.glob('*.pdf'))
-            bt_df = extract_metadata_and_update_df(pdfs, bt_df)
-            bt_df.to_csv(bt_up_path, index=False)
-        else:
+        bt_df = process_BT_csv(subdir)
+        if bt_df is None:
             console.print(f"Fichier BT.csv non trouvé dans [bold]{subdir}[/bold]. Création du zip ignorée.", style="red")
             batch_status[subdir]['facturx'] = True
+            continue
 
         if not any(facturx_dir.glob('*.pdf')):
             console.print(f"Création des Factur-X pour [bold]{subdir.name}[/bold]", style="green")
@@ -205,10 +203,22 @@ def main():
         #     #compress_pdfs(list(Path(facturx_dir).glob('*.pdf')), compressed_facturx_dir)
         #     batch_status[subdir]['facturx'] = f'{len(facturx_dir.glob('*.pdf'))}/{len(bt_df)}'
 
+    # =======================Étape 4: factures individuelles===============================
+    console.print(Panel.fit("Étape 4 : Création des factures factur-x individuelles", style="bold magenta"))
+    bt_up_path = indiv_dir / "BT_updated.csv"
 
+    bt_df = process_BT_csv(indiv_dir)
 
+    if bt_df is not None:
+        indiv_pdfa3_dir = indiv_dir / "pdf3a"
+        indiv_facturx_dir = indiv_dir / 'facturx'
+        indiv_pdfa3_dir.mkdir(exist_ok=True)
+        indiv_facturx_dir.mkdir(exist_ok=True)
+        errors = process_invoices(bt_df, indiv_pdfa3_dir, indiv_facturx_dir, 
+                                conform_pdf=not any(indiv_pdfa3_dir.glob('*.pdf')))
+        print(errors)
     console.print(Panel.fit("Traitement terminé", style="bold green"))
-    # =======================Étape 4: état des lieux de l'atelier==========================
+    # =======================Étape %: état des lieux de l'atelier==========================
     
     
     # tree = rich_directory_tree(atelier_dir, 2)

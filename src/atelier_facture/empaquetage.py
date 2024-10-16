@@ -1,6 +1,7 @@
 from pypdf import PdfReader
 import pandas as pd
 from pathlib import Path
+from logger_config import logger
 
 def extract_metadata_and_update_df(pdf_files: list[Path], df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -48,8 +49,8 @@ def extract_metadata_and_update_df(pdf_files: list[Path], df: pd.DataFrame) -> p
         invoice_id = metadata.get('/InvoiceID', '')
         pdl = str(metadata.get('/Pdl', '')).strip()
         # Cherche d'abord une correspondance dans la colonne 'group'
-        mask = df_copy['group'].astype(str).str.strip() == str(group_name).strip()
-
+        mask = (df_copy['group'].astype(str).str.strip() == str(group_name).strip()) & (df_copy['group'].astype(str).str.strip() != '')
+        
         # Check if any True values in group_mask
         if not mask.any():
             mask = df_copy['pdl'].fillna('').astype(str).str.strip() == pdl
@@ -62,3 +63,37 @@ def extract_metadata_and_update_df(pdf_files: list[Path], df: pd.DataFrame) -> p
         df_copy.loc[mask, 'pdf'] = pdf_file
 
     return df_copy
+
+def process_BT_csv(directory: Path) -> pd.DataFrame | None:
+    """
+    Finds the initial CSV file (starting with 'BT') in the given directory,
+    loads it, and applies the extract_metadata_and_update_df function to update it with PDF metadata.
+
+    Args:
+        directory (Path): The directory to search for the CSV and PDF files.
+
+    Returns:
+        pd.DataFrame: The updated DataFrame, or None if no CSV file is found.
+    """
+    # Find the CSV file
+    csv_files = list(directory.glob('BT*.csv'))
+    if not csv_files:
+        logger.warning(f"No CSV file starting with 'BT' found in {directory}.")
+        return None
+
+    # Use the first CSV file found
+    csv_file = csv_files[0]
+    logger.info(f"Using CSV file: {csv_file}")
+
+    # Load the CSV file
+    df = pd.read_csv(csv_file).replace('–', '-', regex=True)
+
+    # Find all PDF files in the directory
+    pdf_files = list(directory.glob('*.pdf'))
+
+    # Apply the extract_metadata_and_update_df function
+    updated_df = extract_metadata_and_update_df(pdf_files, df)
+
+    updated_df.to_csv(directory / 'BT_updated.csv', index=False)
+
+    return updated_df
