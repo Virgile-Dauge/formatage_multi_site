@@ -38,7 +38,7 @@ def extract_metadata_and_update_df(pdf_files: list[Path], df: pd.DataFrame) -> p
         if col in df_copy.columns:
             df_copy[col] = (df_copy[col]
                 .apply(lambda x: '' if pd.isna(x) else str(x))
-                .str.rstrip('.0'))
+                .str.replace(r'\.0+$', '', regex=True))
     
     for pdf_file in pdf_files:
         reader = PdfReader(pdf_file)
@@ -55,11 +55,11 @@ def extract_metadata_and_update_df(pdf_files: list[Path], df: pd.DataFrame) -> p
         if not mask.any():
             mask = df_copy['pdl'].fillna('').astype(str).str.strip() == pdl
         
-        def format_id(x, width:int=14) -> str:
-            return x if x == '' else str(x).rstrip('.0').zfill(width)
+        # def format_id(x, width:int=14) -> str:
+        #     return x if x == '' else str(x).zfill(width)
 
         df_copy.loc[mask, 'BT-1'] = invoice_id
-        df_copy['BT-1'] = df_copy['BT-1'].apply(lambda x: format_id(x))
+        # df_copy['BT-1'] = df_copy['BT-1'].apply(lambda x: format_id(x))
         df_copy.loc[mask, 'pdf'] = pdf_file
 
     return df_copy
