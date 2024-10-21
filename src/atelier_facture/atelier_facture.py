@@ -1,5 +1,6 @@
 import re
 
+import numpy as np
 import argparse
 from pathlib import Path
 import pandas as pd
@@ -8,6 +9,7 @@ from pandas import DataFrame
 import shutil 
 from rich.console import Console
 from rich.panel import Panel
+from rich.text import Text
 
 from facturix import process_invoices
 
@@ -149,28 +151,57 @@ def main():
         # dans lequels on va respectivement générer les factures regroupement et les factures regroupement mono PDL
         
         batch_status[subdir] = {'fusion': False, 'facturx': False}
-        group_mult_dir = subdir / 'group_mult'
-        group_mono_dir = subdir / 'group_mono'
-        group_mult_dir.mkdir(exist_ok=True)
-        group_mono_dir.mkdir(exist_ok=True)
+        # group_mult_dir = subdir / 'group_mult'
+        # group_mono_dir = subdir / 'group_mono'
+        # group_mult_dir.mkdir(exist_ok=True)
+        # group_mono_dir.mkdir(exist_ok=True)
+        group_dir = subdir / 'group'
+        group_dir.mkdir(exist_ok=True)
         xlsx_file = subdir / f"{subdir.name}.xlsx"
 
         if xlsx_file.exists():
+            df = pd.read_excel(xlsx_file, sheet_name='Sheet1')
+            # Remplacer les tirets moyens par des tirets courts
+            df = df.replace('–', '-', regex=True)
+            # console.print(f"Fusion des factures pour [bold]{subdir.name}[/bold]", style="green")
+            nunique_groupements = df['groupement'].dropna().nunique() - 1
+            nunique_group_multi = df.groupby("groupement").filter(lambda x: len(x) > 1)["groupement"].nunique() - 1
+            nunique_group_mono = df.groupby("groupement").filter(lambda x: len(x) == 1)["groupement"].nunique()
+            # Create a panel with both pieces of information
+            panel_content = Text.assemble(
+                ("Nombre de groupements uniques : ", "cyan"),
+                (f"{nunique_groupements}\n", "cyan bold"),
+                ("Nombre de groupements multi pdl : ", "cyan"),
+                (f"{nunique_group_multi}\n", "cyan bold"),
+                ("Nombre de groupements mono pdl : ", "cyan"),
+                (f"{nunique_group_mono}\n", "cyan bold"),
+                "\n\n",
+                ("Fusion des factures pour ", "green"),
+                (f"{subdir.name}", "green bold")
+            )
             
-            if not any(group_mult_dir.glob('*.pdf')):
-                df = pd.read_excel(xlsx_file, sheet_name='Sheet1')
-                # Remplacer les tirets moyens par des tirets courts
-                df = df.replace('–', '-', regex=True)
+            panel = Panel(
+                panel_content,
+                title=f"Batch {subdir.name}",
+                border_style="blue"
+            )
+            console.print(panel)
+            if not any(group_dir.glob('*.pdf')):
 
+                
+                
                 # TODO quand ok, remplacer merge_dir par tmp_dir
                 merged_pdf_files = create_grouped_invoices(df=df, indiv_dir=indiv_dir, group_dir=subdir, merge_dir=subdir / 'fusion')
-                compress_pdfs(merged_pdf_files, group_mult_dir)
+                compress_pdfs(merged_pdf_files, group_dir)
 
-                create_grouped_single_invoice(df=df, indiv_dir=indiv_dir, output_dir=group_mono_dir)
-                console.print(f"Fusion des factures pour [bold]{subdir.name}[/bold]", style="green")
+                create_grouped_single_invoice(df=df, indiv_dir=indiv_dir, output_dir=group_dir)
+
+
+                batch_status[subdir]['fusion'] = f"{len(list(group_dir.glob('*.pdf')))}/{nunique_groupements}"
+                
             else:
-                console.print(f"Le dossier [bold]{group_mult_dir}[/bold] existe déjà. Fusion ignorée.", style="yellow")
-            batch_status[subdir]['fusion'] = True
+                console.print(f"Le dossier [bold]{group_dir}[/bold] existe déjà. Fusion ignorée.", style="yellow")
+                batch_status[subdir]['fusion'] = True
         else:
             console.print(f"Fichier Excel [bold]{xlsx_file.name}[/bold] non trouvé. Fusion ignorée.", style="red")
             continue
@@ -188,7 +219,7 @@ def main():
         bt_up_path = subdir / "BT_updated.csv"
 
         conform_pdf : bool = not any(pdfa3_dir.glob('*.pdf'))
-        bt_df = process_BT_csv(subdir)
+        bt_df = process_BT_csv(group_dir, subdir)
         if bt_df is None:
             console.print(f"Fichier BT.csv non trouvé dans [bold]{subdir}[/bold]. Création des factures factur-x ignorée.", style="red")
             batch_status[subdir]['facturx'] = True
@@ -197,7 +228,7 @@ def main():
         if not any(facturx_dir.glob('*.pdf')):
             console.print(f"Création des Factur-X pour [bold]{subdir.name}[/bold]", style="green")
             errors = process_invoices(bt_df, pdfa3_dir, facturx_dir, conform_pdf=conform_pdf)
-            batch_status[subdir]['facturx'] = f"{len(list(facturx_dir.glob('*.pdf')))}/{len(bt_df)}"
+            batch_status[subdir]['facturx'] = f"{len(list(facturx_dir.glob('*.pdf')))}/{len(list(group_dir.glob('*.pdf')))}"
 
             if errors:
                 logger.warning(f"Erreurs lors de la création des factures factur-x : {errors}")
@@ -210,7 +241,7 @@ def main():
     console.print(Panel.fit("Étape 4 : Création des factures factur-x individuelles", style="bold magenta"))
     bt_up_path = indiv_dir / "BT_updated.csv"
     if not bt_up_path.exists() or args.force:
-        bt_df = process_BT_csv(indiv_dir)
+        bt_df = process_BT_csv(indiv_dir, indiv_dir)
     else:
         bt_df = pd.read_csv(bt_up_path)
     indiv_pdfa3_dir = indiv_dir / "pdf3a"
