@@ -64,7 +64,7 @@ def extract_metadata_and_update_df(pdf_files: list[Path], df: pd.DataFrame) -> p
 
     return df_copy
 
-def process_BT_csv(directory: Path) -> pd.DataFrame | None:
+def process_BT_csv(pdf_dir: Path, csv_dir: Path) -> pd.DataFrame | None:
     """
     Finds the initial CSV file (starting with 'BT') in the given directory,
     loads it, and applies the extract_metadata_and_update_df function to update it with PDF metadata.
@@ -76,9 +76,9 @@ def process_BT_csv(directory: Path) -> pd.DataFrame | None:
         pd.DataFrame: The updated DataFrame, or None if no CSV file is found.
     """
     # Find the CSV file
-    csv_files = list(directory.glob('BT*.csv'))
+    csv_files = list(csv_dir.glob('BT*.csv'))
     if not csv_files:
-        logger.warning(f"No CSV file starting with 'BT' found in {directory}.")
+        logger.warning(f"No CSV file starting with 'BT' found in {csv_dir}.")
         return None
 
     # Use the first CSV file found
@@ -89,11 +89,11 @@ def process_BT_csv(directory: Path) -> pd.DataFrame | None:
     df = pd.read_csv(csv_file).replace('–', '-', regex=True)
 
     # Find all PDF files in the directory
-    pdf_files = list(directory.glob('*.pdf'))
+    pdf_files = list(pdf_dir.glob('*.pdf'))
 
     # Apply the extract_metadata_and_update_df function
     updated_df = extract_metadata_and_update_df(pdf_files, df)
 
-    updated_df.to_csv(directory / 'BT_updated.csv', index=False)
+    updated_df.to_csv(csv_dir / 'BT_updated.csv', index=False)
 
     return updated_df
