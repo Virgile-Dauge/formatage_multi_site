@@ -240,7 +240,7 @@ def create_grouped_invoices(df: DataFrame, indiv_dir: Path, group_dir: Path, mer
     list[Path]: Une liste des chemins des fichiers PDF fusionnés.
     """
     # Détecter les groupes avec plusieurs PDLs
-    groups = df.groupby("groupement").filter(lambda x: len(x) >= 1)["groupement"].unique()
+    groups = df.groupby("groupement").filter(lambda x: len(x) > 1)["groupement"].unique()
 
     if "nan" in groups:
         groups = groups.remove("nan")
@@ -293,7 +293,7 @@ def create_grouped_single_invoice(df: DataFrame, indiv_dir: Path, output_dir: Pa
     for _, row in single_line_groups.iterrows():
         #print(row)
         group = row['groupement']
-        prm = row['PRM']
+        prm = str(row['PRM']).rstrip('.0')
         matching_files = list(indiv_dir.glob(f"*{prm}*.pdf"))
         if matching_files:
             ajouter_ligne_regroupement(matching_files[0], output_dir, group)
