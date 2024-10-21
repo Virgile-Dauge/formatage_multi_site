@@ -293,7 +293,7 @@ def create_grouped_single_invoice(df: DataFrame, indiv_dir: Path, output_dir: Pa
     for _, row in single_line_groups.iterrows():
         #print(row)
         group = row['groupement']
-        prm = str(row['PRM']).rstrip('.0')
+        prm = str(int(row['PRM'])) if isinstance(row['PRM'], float) else str(row['PRM'])
         matching_files = list(indiv_dir.glob(f"*{prm}*.pdf"))
         if matching_files:
             ajouter_ligne_regroupement(matching_files[0], output_dir, group)
