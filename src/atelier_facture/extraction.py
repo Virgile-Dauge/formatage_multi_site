@@ -4,15 +4,19 @@ import logging
 import zipfile
 import tempfile
 import shutil
+import pymupdf
 
 from pypdf import PdfReader, PdfWriter, PageObject
 from pypdf.generic import ArrayObject, ByteStringObject
 from pypdf.errors import EmptyFileError
 from pathlib import Path
 from typing import Callable, Any
+import pandas as pd
 from pandas import DataFrame
 
-from pdf_utils import remplacer_texte_doc, caviarder_texte_doc, ajouter_ligne_regroupement_doc, apply_pdf_transformations
+from pdf_utils import remplacer_texte_doc, caviarder_texte_doc, ajouter_ligne_regroupement_doc, apply_pdf_transformations, partial_pdf_copy
+from file_naming import compose_filename
+
 from logger_config import logger
 def extract_nested_pdfs(input_path: Path) -> Path:
     """
@@ -104,7 +108,7 @@ def extract_group_name(text: str) -> str | None:
     # Regex pour trouver le début de la parenthèse
     pattern = r'Regroupement de facturation\s*:\s*\('
     match = re.search(pattern, text)
-
+    
     if match:
         start = match.end()  # Fin du match pour le début de la parenthèse
         parentheses_count = 1
@@ -155,12 +159,19 @@ def split_pdf(pdf_file_path: Path, indiv_dir: Path, group_dir: Path,
         nonlocal writer, group, indiv
         if not writer:
             return
-        
+        if date is None or client_name is None or (group_name is None and pdl_name is None):
+            logger.warning(f"Unable to categorize PDF. date: {date}, client_name: {client_name}, group_name: {group_name}, pdl_name: {pdl_name}")
+            return
+        extracted_data = {'date' : date, 'client_name' : client_name, 'group' : group_name, 'pdl' : pdl_name, 'id' : invoice_id}
         if group_name and date and client_name:
             output_pdf_path = group_dir / f"{date}-{client_name} - {group_name}.pdf"
+            # TODO:
+            # output_pdf_path = group_dir / compose_filename(extracted_data, format_type='group') + '.pdf'
             group.append(output_pdf_path)
         elif pdl_name and date and client_name:
             output_pdf_path = indiv_dir / f"{date}-{client_name} - {pdl_name}.pdf"
+            # TODO:
+            # output_pdf_path = indiv_dir / compose_filename(extracted_data, format_type='pdl') + '.pdf'
             indiv.append(output_pdf_path)
         else:
             logger.warning(f"Unable to categorize PDF. date: {date}, client_name: {client_name}, group_name: {group_name}, pdl_name: {pdl_name}")
@@ -317,94 +328,236 @@ def process_zipped_pdfs(
     finally:
         shutil.rmtree(temp_dir)  # Clean up temp directory
 
-def main():
-    import argparse
-    from rich.tree import Tree
-    from rich.live import Live
-    from rich.panel import Panel
-    from rich.layout import Layout
-    from rich.console import Console
-    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+def split_pdf_enhanced(pdf_path: str, regex_pattern: str, output_folder: Path, df: pd.DataFrame) -> None:
+    """
+    Sépare un fichier PDF en plusieurs fichiers en utilisant un motif regex pour identifier les sections,
+    et nomme chaque fichier avec le numéro de facture extrait. Les fichiers sont sauvegardés dans un dossier spécifié
+    avec un nom composé à partir des informations de la dataframe.
 
-    parser = argparse.ArgumentParser(description="Split PDF files based on specific patterns.")
-    parser.add_argument('-i', '--input', type=str, required=True, help="Input ZIP file containing PDF files")
-    parser.add_argument('-w', '--workspace', type=str, required=True, help="Output workspace directory for split PDF files")
-    args = parser.parse_args()
-    input_zip = Path(args.input)
-    workspace_dir = Path(args.workspace)
+    :param pdf_path: Chemin du fichier PDF à traiter.
+    :param regex_pattern: Motif regex pour extraire les identifiants (ex. numéros de facture).
+    :param output_folder: Dossier où les fichiers PDF résultants seront sauvegardés (objet Path).
+    :param dataframe: DataFrame contenant les informations composant le nom du PDF.
+    """
+    # Créer le dossier de destination s'il n'existe pas
+    output_folder.mkdir(parents=True, exist_ok=True)
 
-    workspace_dir.mkdir(parents=True, exist_ok=True)
+    # Ajouter la colonne "fichier" si elle n'existe pas déjà
+    if "fichier" not in df.columns:
+        df["fichier"] = None
 
-    regex_dict = {
-        'date': r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})',
-        'client_name': r'Nom et Prénom ou\s* Raison Sociale :\s*(.*)',
-        'group_name': r'Regroupement de facturation\s*:\s*\((.*?)\)',
-        'pdl': r'Référence PDL : (\d{14})',
-        'invoice_id': r'N° de facture\s*:\s*(\d{14})'
-    }
+    # Charger le PDF source avec le context manager "with"
+    with pymupdf.open(pdf_path) as doc:
+        # Trouver les pages qui contiennent le motif regex et extraire le numéro de facture
+        split_points: list[tuple[int, str]] = []  # Liste de tuples (page_number, identifier)
+        for page_number in range(len(doc)):
+            page = doc.load_page(page_number)
+            text: str = page.get_text()
+
+            # Recherche du motif sur la page
+            matches: list[str] = re.findall(regex_pattern, text)
+            if matches:
+                identifier: str = matches[0]
+                split_points.append((page_number, identifier))
+
+        # Ajouter la fin du document comme dernier point de séparation
+        split_points.append((len(doc), None))
+
+        # Créer des fichiers PDF distincts à partir des pages définies par les points de séparation
+        for i in range(len(split_points) - 1):
+            start_page, identifier = split_points[i]
+            end_page, _ = split_points[i + 1]
+
+            # Vérifier qu'un identifiant a été trouvé
+            if not identifier:
+                continue
+
+            invoice_data = df.loc[df['invoice_id'] == identifier].squeeze()
+            file_dict = {
+                'date': invoice_data.get('creation_date', 'Inconnue'),
+                'client_name': invoice_data.get('client_name', 'Inconnu'),
+                'id': identifier,
+                'group': invoice_data.get('group_name', ''),
+                'pdl': invoice_data.get('pdl', '')
+            }
+
+            # Composer le nom de fichier
+            format_type = 'pdl' if pd.notna(invoice_data.get('pdl')) and invoice_data.get('pdl') else 'group'
+            filename = compose_filename(file_dict, format_type)
+            
+            # Définir le chemin de sauvegarde du fichier PDF
+            output_path: Path = output_folder / f"{filename}.pdf"
+          
+            # Créer le PDF avec les pages et les métadonnées
+            partial_pdf_copy(doc, start_page, end_page, output_path)
+
+            transformations = [
+                (remplacer_texte_doc, "Votre espace client  : https://client.enargia.eus", "Votre espace client : https://suiviconso.enargia.eus"),
+                (caviarder_texte_doc, "Votre identifiant :", 290, 45),
+            ]
+            if format_type == 'group':
+                transformations.append((ajouter_ligne_regroupement_doc, file_dict['group']))
+            apply_pdf_transformations(output_path, output_path, transformations)
+
+            # Mettre à jour la colonne "fichier" dans le dataframe pour l'identifiant correspondant
+            df.loc[df['invoice_id'] == identifier, "fichier"] = str(output_path)
+
+    print("Séparation des factures terminée.")
+
+def process_zipped_pdfs_enhanced(
+    input_path: Path,
+    regex_pattern: str|None=None, 
+    output_dir: Path|None=None, 
+    progress_callback: Callable[[str, int, int, str], None] | None=None
+) -> tuple[list[str], list[str], list[str], DataFrame]:
+    """
+    Extract PDFs from nested zip files to tmp directory, process them, and clean up.
+
+    Args:
+        input_path (Path): Path to the input zip file or directory.
+        indiv_dir (Path): Path to to put individual invoices.
+        group_dir (Path): Path to to put grouped invoices.
+        regex_dict (dict): Dictionary of regex patterns.
+        progress_callback (Optional[Callable]): Function to call with progress updates.
+
+    Returns:
+        tuple: Lists of group PDFs, individual PDFs, and errors.
+    """
+    def update_progress(task: str, current: int, total: int, detail: str=''):
+        if progress_callback:
+            progress_callback(task, current, total, detail)
     
-    def text_progress_handler(task: str, current: int, total: int):
-        if task == "Extracting PDFs":
-            print("Extraction complete")
-        elif task == "Processing PDFs":
-            print(f"Processing PDF {current}/{total}")
-        elif task == "Cleanup":
-            print("Cleanup complete")
+    update_progress("Extracting PDFs", 0, 1, "Starting extraction")
+    temp_dir = extract_nested_pdfs(input_path)
+    update_progress("Extracting PDFs", 1, 1, "Extraction complete")
+    update_progress("Extracting csv and xlsx", 0, 1, "Starting extraction")
+    extract_root_level_csv_xlsx(input_path, output_dir, output_dir)
+    update_progress("Extracting csv and xlsx", 1, 1, "Extraction complete")
+    groups = []
+    indivs = []
+    errors = []
+
+    if regex_pattern is None:
+        regex_pattern = r"N° de facture\s*:\s*(\d{14})"
+
+    try:
+        pdf_files = list(temp_dir.glob('**/*.pdf'))
+        total_pdfs = len(pdf_files)
+
+        for i, pdf in enumerate(pdf_files, 1):
+            update_progress("Processing PDFs", i, total_pdfs, pdf)
+            split_pdf_enhanced(pdf, regex_pattern, output_dir)
 
 
-    console = Console()
+        return groups, indivs, errors
+    finally:
+        shutil.rmtree(temp_dir)  # Clean up temp directory
 
-    def create_progress_handler():
-        progress = Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console,
-        )
-        extract_task = None
-        process_task = None
+def main():
+    # Exemple d'utilisation
+    pdf_path = Path("~/data/enargia/tests/multipage.pdf").expanduser()
+    regex_pattern: str = r"N° de facture\s*:\s*(\d{14})"
+    output_folder: Path = Path("~/data/enargia/tests/factures_separees").expanduser()
+    # Exemple de dataframe
+    data = {
+        'invoice_id': ['01202400038453', '01202400038461'],
+        'client_name': ['Client A', 'Client B'],
+        'group_name': ['Group A', 'Group B'],
+        'creation_date': ['20241101', '20241102'],
+        'pdl': ['01202400038461', '']
+    }
+    df = pd.DataFrame(data)
 
-        def progress_handler(task: str, current: int, total: int):
-            nonlocal extract_task, process_task
+    split_pdf_enhanced(pdf_path, regex_pattern, output_folder, df)
+    print(df)
+# def main():
+#     import argparse
+#     from rich.tree import Tree
+#     from rich.live import Live
+#     from rich.panel import Panel
+#     from rich.layout import Layout
+#     from rich.console import Console
+#     from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
-            if task == "Extracting PDFs":
-                console.print("[green]Extracting PDFs")
-            elif task == "Processing PDFs":
-                if current == 1:  # Start a new progress bar for processing
-                    process_task = progress.add_task("[green]Processing PDFs", total=total)
-                    progress.start()
-                if process_task is not None:
-                    progress.update(process_task, completed=current)
-                if current == total:
-                    progress.stop()
-            elif task == "Cleanup":
-                console.print("[green]Cleanup complete")
+#     parser = argparse.ArgumentParser(description="Split PDF files based on specific patterns.")
+#     parser.add_argument('-i', '--input', type=str, required=True, help="Input ZIP file containing PDF files")
+#     parser.add_argument('-w', '--workspace', type=str, required=True, help="Output workspace directory for split PDF files")
+#     args = parser.parse_args()
+#     input_zip = Path(args.input)
+#     workspace_dir = Path(args.workspace)
 
-        return progress_handler
-    indiv_dir = workspace_dir / 'indiv'
-    group_dir = workspace_dir / input_zip.stem
-    # Use the progress handler in your main code
-    progress_handler = create_progress_handler()
-    group_pdfs, individual_pdfs, errors = process_zipped_pdfs(
-        input_zip, indiv_dir, group_dir, regex_dict, progress_callback=progress_handler
-    )
-        # Create a panel with the resulting information
-    result_panel = Panel(
-        f"""
-        [bold green]Processing Results:[/bold green]
-        Workspace Directory: {workspace_dir}
-        Number of Group PDFs: {len(group_pdfs)}
-        Number of Individual PDFs: {len(individual_pdfs)}
-        Number of Errors: {len(errors)}
-        """,
-        title="Summary",
-        # expand=False,
-        # border_style="green",
-    )
+#     workspace_dir.mkdir(parents=True, exist_ok=True)
 
-    # Display the panel
-    console.print(result_panel)
+#     regex_dict = {
+#         'date': r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})',
+#         'client_name': r'Nom et Prénom ou\s* Raison Sociale :\s*(.*)',
+#         'group_name': r'Regroupement de facturation\s*:\s*\((.*?)\)',
+#         'pdl': r'Référence PDL : (\d{14})',
+#         'invoice_id': r'N° de facture\s*:\s*(\d{14})'
+#     }
+    
+#     def text_progress_handler(task: str, current: int, total: int):
+#         if task == "Extracting PDFs":
+#             print("Extraction complete")
+#         elif task == "Processing PDFs":
+#             print(f"Processing PDF {current}/{total}")
+#         elif task == "Cleanup":
+#             print("Cleanup complete")
+
+
+#     console = Console()
+
+#     def create_progress_handler():
+#         progress = Progress(
+#             SpinnerColumn(),
+#             TextColumn("[progress.description]{task.description}"),
+#             BarColumn(),
+#             TaskProgressColumn(),
+#             console=console,
+#         )
+#         extract_task = None
+#         process_task = None
+
+#         def progress_handler(task: str, current: int, total: int):
+#             nonlocal extract_task, process_task
+
+#             if task == "Extracting PDFs":
+#                 console.print("[green]Extracting PDFs")
+#             elif task == "Processing PDFs":
+#                 if current == 1:  # Start a new progress bar for processing
+#                     process_task = progress.add_task("[green]Processing PDFs", total=total)
+#                     progress.start()
+#                 if process_task is not None:
+#                     progress.update(process_task, completed=current)
+#                 if current == total:
+#                     progress.stop()
+#             elif task == "Cleanup":
+#                 console.print("[green]Cleanup complete")
+
+#         return progress_handler
+#     indiv_dir = workspace_dir / 'indiv'
+#     group_dir = workspace_dir / input_zip.stem
+#     # Use the progress handler in your main code
+#     progress_handler = create_progress_handler()
+#     group_pdfs, individual_pdfs, errors = process_zipped_pdfs(
+#         input_zip, indiv_dir, group_dir, regex_dict, progress_callback=progress_handler
+#     )
+#         # Create a panel with the resulting information
+#     result_panel = Panel(
+#         f"""
+#         [bold green]Processing Results:[/bold green]
+#         Workspace Directory: {workspace_dir}
+#         Number of Group PDFs: {len(group_pdfs)}
+#         Number of Individual PDFs: {len(individual_pdfs)}
+#         Number of Errors: {len(errors)}
+#         """,
+#         title="Summary",
+#         # expand=False,
+#         # border_style="green",
+#     )
+
+#     # Display the panel
+#     console.print(result_panel)
 if __name__ == "__main__":
     main()
 
