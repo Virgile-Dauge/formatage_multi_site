@@ -116,6 +116,24 @@ def obtenir_lignes_regroupement(texte_regroupement: str, fontname: str, fontsize
         lignes.append(texte_regroupement)
     return lignes
 
+def partial_pdf_copy(doc: pymupdf.Document, start_page: int, end_page: int, output_path: Path) -> None:
+    """
+    Crée un nouveau fichier PDF à partir des pages spécifiées d'un document source,
+    et ajoute les métadonnées spécifiées.
+
+    :param doc: Document source PyMuPDF.
+    :param start_page: Index de la page de début (inclus).
+    :param end_page: Index de la page de fin (exclus).
+    :param output_path: Chemin de sauvegarde du nouveau fichier PDF.
+    :param metadata: Dictionnaire contenant les métadonnées à ajouter.
+    """
+    with pymupdf.open() as new_doc:
+        # Insérer les pages du document source dans le nouveau document
+        for page_number in range(start_page, end_page):
+            new_doc.insert_pdf(doc, from_page=page_number, to_page=page_number)
+
+        # Sauvegarder le nouveau fichier PDF
+        new_doc.save(output_path)
 # ============== Opérations uniques ========================
 def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name : str, cible:str='Votre espace client :', fontname : str="hebo", fontsize : int=11):
     """
@@ -281,13 +299,16 @@ if __name__ == "__main__":
         # Add more transformations as needed
     ]
 
-    apply_pdf_transformations(input_pdf, output_pdf, transformations)
+    # apply_pdf_transformations(input_pdf, output_pdf, transformations)
 
-    doc = pymupdf.open(output_pdf)
+    # doc = pymupdf.open(output_pdf)
+    doc = pymupdf.open(input_pdf)
     metadata = get_extended_metadata(doc)
 
+    from rich import print
+    print(metadata)
     group = "GROUP - NAME"
     # ajouter_ligne_regroupement(input_pdf, input_pdf.parent, 'COUCOU')
     original_filename = input_pdf.stem
     compressed_file = input_pdf.parent / f"{original_filename}_compressed.pdf"
-    compress_pdf(input_pdf, compressed_file)
+    # compress_pdf(input_pdf, compressed_file)
