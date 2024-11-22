@@ -157,10 +157,10 @@ def main():
         # group_mono_dir.mkdir(exist_ok=True)
         group_dir = subdir / 'group'
         group_dir.mkdir(exist_ok=True)
-        xlsx_file = subdir / f"{subdir.name}.xlsx"
+        group_csv = subdir / f"{subdir.name}.csv"
 
-        if xlsx_file.exists():
-            df = pd.read_excel(xlsx_file, sheet_name='Sheet1')
+        if group_csv.exists():
+            df = pd.read_csv(group_csv)
             # Remplacer les tirets moyens par des tirets courts
             df = df.replace('–', '-', regex=True)
             # console.print(f"Fusion des factures pour [bold]{subdir.name}[/bold]", style="green")
@@ -203,7 +203,7 @@ def main():
                 console.print(f"Le dossier [bold]{group_dir}[/bold] existe déjà. Fusion ignorée.", style="yellow")
                 batch_status[subdir]['fusion'] = True
         else:
-            console.print(f"Fichier Excel [bold]{xlsx_file.name}[/bold] non trouvé. Fusion ignorée.", style="red")
+            console.print(f"Fichier [bold]{group_csv.name}[/bold] non trouvé. Fusion ignorée.", style="red")
             continue
         
         # ===================Étape 3B : Création des factures factur-x====================
