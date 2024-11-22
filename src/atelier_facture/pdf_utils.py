@@ -134,6 +134,25 @@ def partial_pdf_copy(doc: pymupdf.Document, start_page: int, end_page: int, outp
 
         # Sauvegarder le nouveau fichier PDF
         new_doc.save(output_path)
+
+def concat_pdfs(paths: list[Path], output_path: Path) -> None:
+    """
+    Concatène une liste de fichiers PDF en un seul fichier.
+
+    Arguments :
+    :paths list[Path]: liste de chemins vers les fichiers PDF à concaténer (type : list[Path])
+    :output_path Path:chemin vers le fichier de sortie (type : Path)
+    """
+    # Créer un nouveau document PDF vide
+    with pymupdf.Document() as pdf_final:
+        for chemin_pdf in paths:
+            with pymupdf.Document(str(chemin_pdf)) as pdf_a_ajouter:
+                # Ajouter chaque page du document actuel au PDF final
+                for page_index in range(len(pdf_a_ajouter)):
+                    pdf_final.insert_pdf(pdf_a_ajouter, from_page=page_index, to_page=page_index)
+        
+        # Enregistrer le PDF final
+        pdf_final.save(str(output_path))
 # ============== Opérations uniques ========================
 def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name : str, cible:str='Votre espace client :', fontname : str="hebo", fontsize : int=11):
     """
