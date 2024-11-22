@@ -187,7 +187,8 @@ def ajouter_ligne_regroupement(fichier_pdf : Path, output_dir: Path, group_name 
     doc.close()
 
 # ============== Opérations chainables =====================
-def ajouter_ligne_regroupement_doc(doc, cible:str = 'Votre espace client :', fontname : str="hebo", fontsize : int=11):
+# TODO: Check if legacy not impacted
+def ajouter_ligne_regroupement_doc(doc, group: str|None=None, cible:str = 'Votre espace client :', fontname : str="hebo", fontsize : int=11):
     """
     Ajoute une ligne de regroupement à un fichier PDF existant.
 
@@ -202,11 +203,12 @@ def ajouter_ligne_regroupement_doc(doc, cible:str = 'Votre espace client :', fon
     nouveau dossier nommé "groupement_facture_unique" situé dans le même répertoire
     que le fichier d'entrée.
     """
-    
-    metadata = get_extended_metadata(doc)
-    if not "GroupName" in metadata:
-        return
-    group = metadata.get('GroupName', '')
+    if group is None:
+        
+        metadata = get_extended_metadata(doc)
+        if not "GroupName" in metadata:
+            return
+        group = metadata.get('GroupName', '')
     
     if group == '':
         return
