@@ -343,8 +343,8 @@ def split_pdf_enhanced(pdf_path: str, regex_pattern: str, output_folder: Path, d
     output_folder.mkdir(parents=True, exist_ok=True)
 
     # Ajouter la colonne "fichier" si elle n'existe pas déjà
-    if "fichier" not in df.columns:
-        df["fichier"] = None
+    if "fichier_extrait" not in df.columns:
+        df["fichier_extrait"] = None
 
     # Charger le PDF source avec le context manager "with"
     with pymupdf.open(pdf_path) as doc:
@@ -372,23 +372,23 @@ def split_pdf_enhanced(pdf_path: str, regex_pattern: str, output_folder: Path, d
             if not identifier:
                 continue
 
-            invoice_data = df.loc[df['invoice_id'] == identifier].squeeze()
+            invoice_data = df.loc[df['id'] == identifier].squeeze()
             file_dict = {
-                'date': invoice_data.get('creation_date', 'Inconnue'),
-                'client_name': invoice_data.get('client_name', 'Inconnu'),
+                'date': invoice_data.get('date', 'Inconnue'),
+                'membre': invoice_data.get('membre', 'Inconnu'),
                 'id': identifier,
-                'group': invoice_data.get('group_name', ''),
+                'groupement': invoice_data.get('groupement', ''),
                 'pdl': invoice_data.get('pdl', '')
             }
 
             # Composer le nom de fichier
-            format_type = 'pdl' if pd.notna(invoice_data.get('pdl')) and invoice_data.get('pdl') else 'group'
+            format_type = 'pdl' if pd.notna(invoice_data.get('pdl')) and invoice_data.get('pdl') else 'groupement'
             filename = compose_filename(file_dict, format_type)
             
             # Définir le chemin de sauvegarde du fichier PDF
             output_path: Path = output_folder / f"{filename}.pdf"
           
-            # Créer le PDF avec les pages et les métadonnées
+            # Créer le PDF avec les pages séléctionnées
             partial_pdf_copy(doc, start_page, end_page, output_path)
 
             transformations = [
@@ -400,13 +400,13 @@ def split_pdf_enhanced(pdf_path: str, regex_pattern: str, output_folder: Path, d
             apply_pdf_transformations(output_path, output_path, transformations)
 
             # Mettre à jour la colonne "fichier" dans le dataframe pour l'identifiant correspondant
-            df.loc[df['invoice_id'] == identifier, "fichier"] = str(output_path)
+            df.loc[df['id'] == identifier, "fichier_extrait"] = str(output_path)
 
     print("Séparation des factures terminée.")
 
 def process_zipped_pdfs_enhanced(
     input_path: Path,
-    regex_pattern: str|None=None, 
+    regex_pattern: str|None=None,
     output_dir: Path|None=None, 
     progress_callback: Callable[[str, int, int, str], None] | None=None
 ) -> tuple[list[str], list[str], list[str], DataFrame]:
@@ -460,10 +460,10 @@ def main():
     output_folder: Path = Path("~/data/enargia/tests/factures_separees").expanduser()
     # Exemple de dataframe
     data = {
-        'invoice_id': ['01202400038453', '01202400038461'],
-        'client_name': ['Client A', 'Client B'],
+        'id': ['01202400038453', '01202400038461'],
+        'membre': ['Client A', 'Client B'],
         'group_name': ['Group A', 'Group B'],
-        'creation_date': ['20241101', '20241102'],
+        'date': ['20241101', '20241102'],
         'pdl': ['01202400038461', '']
     }
     df = pd.DataFrame(data)
