@@ -12,7 +12,7 @@ from file_naming import compose_filename
 from mpl import export_table_as_pdf
 from pdf_utils import concat_pdfs, ajouter_ligne_regroupement_doc, apply_pdf_transformations
 from pedagogie import afficher_arborescence_travail, etat_avancement
-from extraction import process_zipped_pdfs_enhanced
+from extraction import process_zip
 from facturix import process_invoices
 
 def detection(df: DataFrame):
@@ -85,7 +85,7 @@ def fusion_groupes(df: DataFrame, output_dir: Path):
             for index, row in pdl.iterrows():
                 fichier = row['fichier_extrait']
                 if pd.isna(fichier):
-                    logger.warning(f"Pas de 'fichier_extrait' pour facture {row['id']} dans le groupe {row['groupement']}")
+                    logger.warning(f"Pas de 'fichier_extrait' {row['id']} : fichier enrichi groupement {row['groupement']} créé sans.")
                 else:
                     to_concat.append(fichier)
             
@@ -141,17 +141,17 @@ def main():
     # =======================Étape 1: Extraction des données===========================
     if args.input:
         input_path = Path(args.input).expanduser()
-        process_zipped_pdfs_enhanced(input_path, r"N° de facture\s*:\s*(\d{14})", ip)
-        # TODO
+        extract_df = process_zip(input_path, ip)
 
     # =======================Étape 2: Lecture des consignes============================
     df = pd.read_csv(p / 'todo.csv', sep=',', encoding='utf-8', dtype=str)
+    print(df)
     detection(df)
     etat_avancement(console, df, ip, ep, fp)
 
     # =======================Étape 3: Création des pdfs enrichis=======================
     result = fusion_groupes(df, ep)
-    etat_avancement(console, df, ip, ep, fp)
+    #etat_avancement(console, df, ip, ep, fp)
     # =======================Étape 4: Création des factures Factur-X===================
     bt_df = vers_facturx(df, p / 'bt.csv', fp)
 
