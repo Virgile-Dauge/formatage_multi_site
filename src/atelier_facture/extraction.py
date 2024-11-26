@@ -328,7 +328,7 @@ def process_zipped_pdfs(
     finally:
         shutil.rmtree(temp_dir)  # Clean up temp directory
 
-def split_pdf_enhanced(pdf_path: str, regex_pattern: str, output_folder: Path, df: pd.DataFrame) -> None:
+def split_pdf_enhanced(pdf_path: str, output_folder: Path) -> dict[str, str]:
     """
     Sépare un fichier PDF en plusieurs fichiers en utilisant un motif regex pour identifier les sections,
     et nomme chaque fichier avec le numéro de facture extrait. Les fichiers sont sauvegardés dans un dossier spécifié
@@ -339,51 +339,33 @@ def split_pdf_enhanced(pdf_path: str, regex_pattern: str, output_folder: Path, d
     :param output_folder: Dossier où les fichiers PDF résultants seront sauvegardés (objet Path).
     :param dataframe: DataFrame contenant les informations composant le nom du PDF.
     """
+
     # Créer le dossier de destination s'il n'existe pas
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    # Ajouter la colonne "fichier" si elle n'existe pas déjà
-    if "fichier_extrait" not in df.columns:
-        df["fichier_extrait"] = None
-
+    res: list[dict[str, str]] = []
     # Charger le PDF source avec le context manager "with"
     with pymupdf.open(pdf_path) as doc:
         # Trouver les pages qui contiennent le motif regex et extraire le numéro de facture
         split_points: list[tuple[int, str]] = []  # Liste de tuples (page_number, identifier)
-        for page_number in range(len(doc)):
-            page = doc.load_page(page_number)
-            text: str = page.get_text()
+        for i, page in enumerate(doc):
+            extracted_data = extract_and_format_data(page.get_text())
 
-            # Recherche du motif sur la page
-            matches: list[str] = re.findall(regex_pattern, text)
-            if matches:
-                identifier: str = matches[0]
-                split_points.append((page_number, identifier))
+            if extracted_data and 'id' in extracted_data:
+                # identifier: str = extracted_data['id']
+                split_points.append((i, extracted_data))
 
         # Ajouter la fin du document comme dernier point de séparation
         split_points.append((len(doc), None))
-
+        # print(split_points)
         # Créer des fichiers PDF distincts à partir des pages définies par les points de séparation
         for i in range(len(split_points) - 1):
-            start_page, identifier = split_points[i]
+            start_page, data = split_points[i]
             end_page, _ = split_points[i + 1]
 
-            # Vérifier qu'un identifiant a été trouvé
-            if not identifier:
-                continue
-
-            invoice_data = df.loc[df['id'] == identifier].squeeze()
-            file_dict = {
-                'date': invoice_data.get('date', 'Inconnue'),
-                'membre': invoice_data.get('membre', 'Inconnu'),
-                'id': identifier,
-                'groupement': invoice_data.get('groupement', ''),
-                'pdl': invoice_data.get('pdl', '')
-            }
-
             # Composer le nom de fichier
-            format_type = 'pdl' if pd.notna(invoice_data.get('pdl')) and invoice_data.get('pdl') else 'groupement'
-            filename = compose_filename(file_dict, format_type)
+            format_type = 'pdl' if 'pdl' in data else 'groupement'
+            filename = compose_filename(data, format_type)
             
             # Définir le chemin de sauvegarde du fichier PDF
             output_path: Path = output_folder / f"{filename}.pdf"
@@ -396,80 +378,117 @@ def split_pdf_enhanced(pdf_path: str, regex_pattern: str, output_folder: Path, d
                 (caviarder_texte_doc, "Votre identifiant :", 290, 45),
             ]
             if format_type == 'group':
-                transformations.append((ajouter_ligne_regroupement_doc, file_dict['group']))
+                transformations.append((ajouter_ligne_regroupement_doc, data['groupement']))
             apply_pdf_transformations(output_path, output_path, transformations)
 
-            # Mettre à jour la colonne "fichier" dans le dataframe pour l'identifiant correspondant
-            df.loc[df['id'] == identifier, "fichier_extrait"] = str(output_path)
+            data['fichier_extrait'] = str(output_path)
+            res.append(data)
 
+    return res
     print("Séparation des factures terminée.")
 
-def process_zipped_pdfs_enhanced(
+def process_zip(
     input_path: Path,
-    regex_pattern: str|None=None,
     output_dir: Path|None=None, 
-    progress_callback: Callable[[str, int, int, str], None] | None=None
-) -> tuple[list[str], list[str], list[str], DataFrame]:
-    """
-    Extract PDFs from nested zip files to tmp directory, process them, and clean up.
-
-    Args:
-        input_path (Path): Path to the input zip file or directory.
-        indiv_dir (Path): Path to to put individual invoices.
-        group_dir (Path): Path to to put grouped invoices.
-        regex_dict (dict): Dictionary of regex patterns.
-        progress_callback (Optional[Callable]): Function to call with progress updates.
-
-    Returns:
-        tuple: Lists of group PDFs, individual PDFs, and errors.
-    """
-    def update_progress(task: str, current: int, total: int, detail: str=''):
-        if progress_callback:
-            progress_callback(task, current, total, detail)
-    
-    update_progress("Extracting PDFs", 0, 1, "Starting extraction")
+) -> DataFrame:
     temp_dir = extract_nested_pdfs(input_path)
-    update_progress("Extracting PDFs", 1, 1, "Extraction complete")
-    update_progress("Extracting csv and xlsx", 0, 1, "Starting extraction")
-    extract_root_level_csv_xlsx(input_path, output_dir, output_dir)
-    update_progress("Extracting csv and xlsx", 1, 1, "Extraction complete")
-    groups = []
-    indivs = []
-    errors = []
-
-    if regex_pattern is None:
-        regex_pattern = r"N° de facture\s*:\s*(\d{14})"
-
+    read = []
     try:
         pdf_files = list(temp_dir.glob('**/*.pdf'))
-        total_pdfs = len(pdf_files)
 
         for i, pdf in enumerate(pdf_files, 1):
-            update_progress("Processing PDFs", i, total_pdfs, pdf)
-            split_pdf_enhanced(pdf, regex_pattern, output_dir)
-
-
-        return groups, indivs, errors
+            read += split_pdf_enhanced(pdf, output_dir)
+        return DataFrame(read)
+    
     finally:
         shutil.rmtree(temp_dir)  # Clean up temp directory
 
+def abbreviate_long_text_to_acronym(text: str, max_length: int=20, max_word_length: int=9) -> str:
+    """
+    Crée un acronyme pour un texte s'il dépasse une longueur maximale spécifiée et qu'au moins un mot a une longueur supérieure ou égale à 10.
+
+    :param text: Le texte à vérifier.
+    :param max_length: La longueur maximale du texte.
+    :return: L'acronyme si une condition est remplie, ou le texte original.
+    """
+    words = text.split()
+    if len(text) > max_length and any(len(word) >= max_word_length for word in words):
+        acronym = ''.join(word[0].upper() for word in words if word)
+        return acronym
+    return text
+
+def extract_patterns(text: str, patterns: dict[str, str]) -> dict[str, list[str|tuple[str]]]:
+    """
+    Extrait les correspondances des motifs regex donnés dans le texte.
+
+    :param text: Le texte dans lequel effectuer la recherche.
+    :param patterns: Un dictionnaire où les clés sont des noms et les valeurs sont des motifs regex à rechercher.
+    :return: Un dictionnaire contenant chaque clé et les correspondances trouvées, ou un dictionnaire vide s'il n'y a aucune correspondance.
+    """
+    matches: dict[str, list[str]] = {}
+    for key, pattern in patterns.items():
+        found = re.search(pattern, text, re.DOTALL)
+        if found:
+            matches[key] = found.groups()
+    return matches
+
+def format_extrated_data(data: dict[str, list[str|tuple[str]]]) -> dict[str, str]:
+    """
+    Formate les données extraites pour les rendre plus lisibles.
+
+    :param data: Un dictionnaire contenant les données extraites.
+    :return: Un dictionnaire contenant les données formatées.
+    """
+    formatted_data = data.copy()
+
+    if 'date' in formatted_data:
+        formatted_data['date'] = formatted_data['date'][::-1]
+    
+    for key, value in formatted_data.items():
+        if isinstance(value, tuple):
+            formatted_data[key] = ''.join(value).replace('\n', ' ')
+        else:
+            formatted_data[key] = value
+
+    if 'pdl' in formatted_data and len(formatted_data['pdl']) == 9:
+        formatted_data['id_groupement'] = formatted_data.pop('pdl')
+    
+    if 'membre' in formatted_data:
+        formatted_data['membre'] = abbreviate_long_text_to_acronym(formatted_data['membre'], 15)
+
+    return formatted_data
+
+def extract_and_format_data(text: str, patterns: dict[str, str]|None=None) -> dict[str, str]:
+    """
+    Extrait et formate les données du texte en utilisant les motifs regex donnés.
+
+    :param text: Le texte dans lequel effectuer la recherche.
+    :param patterns: Un dictionnaire où les clés sont des noms et les valeurs sont des motifs regex à rechercher.
+    :return: Un dictionnaire contenant les données formatées, ou un dictionnaire vide s'il n'y a aucune correspondance.
+    """
+    if patterns is None:
+        patterns = {'id': r"N° de facture\s*:\s*(\d{14})",
+            'date': r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})',
+            'pdl': r'Référence PDL : (\d+)',
+            'groupement': r'Regroupement de facturation\s*:\s*\((.*?)\)',
+            'membre': r'Nom et Prénom ou\s* Raison Sociale :\s*(.*?)(?=\n|$)'
+        }
+    extracted_data = extract_patterns(text, patterns)
+    formatted_data = format_extrated_data(extracted_data)
+    return formatted_data
+
 def main():
     # Exemple d'utilisation
-    pdf_path = Path("~/data/enargia/tests/multipage.pdf").expanduser()
-    regex_pattern: str = r"N° de facture\s*:\s*(\d{14})"
-    output_folder: Path = Path("~/data/enargia/tests/factures_separees").expanduser()
-    # Exemple de dataframe
-    data = {
-        'id': ['01202400038453', '01202400038461'],
-        'membre': ['Client A', 'Client B'],
-        'group_name': ['Group A', 'Group B'],
-        'date': ['20241101', '20241102'],
-        'pdl': ['01202400038461', '']
-    }
-    df = pd.DataFrame(data)
+    pdf_path = Path("~/data/enargia/tests/monopage.pdf").expanduser()
 
-    split_pdf_enhanced(pdf_path, regex_pattern, output_folder, df)
-    print(df)
+    output_folder: Path = Path("~/data/enargia/tests/factures_separees").expanduser()
+
+    res = split_pdf_enhanced(pdf_path, output_folder)
+    print(res)
+    zip_path: Path  = Path("~/data/enargia/tests/CAPB.zip").expanduser()
+    output_folder: Path = Path("~/data/enargia/tests/extractioon_test").expanduser()
+    res_df = process_zip(zip_path, output_folder)
+    res_df.to_csv(output_folder / "extracted_data.csv", index=False)
 # def main():
 #     import argparse
 #     from rich.tree import Tree
