@@ -15,9 +15,10 @@ import pandas as pd
 from pandas import DataFrame
 
 from pdf_utils import remplacer_texte_doc, caviarder_texte_doc, ajouter_ligne_regroupement_doc, apply_pdf_transformations, partial_pdf_copy
-from file_naming import compose_filename
+from file_naming import compose_filename, abbreviate_long_text_to_acronym
+from pedagogie import with_progress_bar, rapport_extraction
 
-from logger_config import logger
+from logger_config import logger, setup_logger
 def extract_nested_pdfs(input_path: Path) -> Path:
     """
     Extracts all PDFs from nested zip files to a temporary directory.
@@ -339,7 +340,7 @@ def split_pdf_enhanced(pdf_path: str, output_folder: Path) -> dict[str, str]:
     :param output_folder: Dossier où les fichiers PDF résultants seront sauvegardés (objet Path).
     :param dataframe: DataFrame contenant les informations composant le nom du PDF.
     """
-
+    logger.info(f"Découpage de {pdf_path.name} :")
     # Créer le dossier de destination s'il n'existe pas
     output_folder.mkdir(parents=True, exist_ok=True)
 
@@ -383,39 +384,48 @@ def split_pdf_enhanced(pdf_path: str, output_folder: Path) -> dict[str, str]:
 
             data['fichier_extrait'] = str(output_path)
             res.append(data)
+            logger.info(f"Le fichier {output_path.name} a été extrait.")
 
     return res
-    print("Séparation des factures terminée.")
+
+def extract_files_from_zip(zip_file_path, output_folder, to_extract=['consignes.csv', 'facturx.csv']):
+    with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+        for file_name in to_extract:
+            try:
+                zip_ref.extract(file_name, output_folder)
+                logger.info(f"Le fichier {file_name} a été extrait avec succès.")
+            except KeyError:
+                logger.warning(f"Le fichier {file_name} n'a pas été trouvé dans l'archive.")
+
 
 def process_zip(
     input_path: Path,
-    output_dir: Path|None=None, 
-) -> DataFrame:
+    output_dir: Path,
+    files_to_extract: list[str]|None=None,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> tuple[DataFrame, DataFrame]:
+    
+    if files_to_extract is None:
+        files_to_extract = ['consignes.csv', 'facturx.csv']
+
     temp_dir = extract_nested_pdfs(input_path)
     read = []
     try:
         pdf_files = list(temp_dir.glob('**/*.pdf'))
+        total_files = len(pdf_files)
 
         for i, pdf in enumerate(pdf_files, 1):
             read += split_pdf_enhanced(pdf, output_dir)
-        return DataFrame(read)
+            if progress_callback:
+                progress_callback(i, total_files)
+
+        extract_files_from_zip(input_path, output_dir, files_to_extract)
+
+        expected : Path = output_dir / files_to_extract[0]
+        return pd.read_csv(expected, dtype=str), pd.DataFrame(read)
     
     finally:
         shutil.rmtree(temp_dir)  # Clean up temp directory
-
-def abbreviate_long_text_to_acronym(text: str, max_length: int=20, max_word_length: int=9) -> str:
-    """
-    Crée un acronyme pour un texte s'il dépasse une longueur maximale spécifiée et qu'au moins un mot a une longueur supérieure ou égale à 10.
-
-    :param text: Le texte à vérifier.
-    :param max_length: La longueur maximale du texte.
-    :return: L'acronyme si une condition est remplie, ou le texte original.
-    """
-    words = text.split()
-    if len(text) > max_length and any(len(word) >= max_word_length for word in words):
-        acronym = ''.join(word[0].upper() for word in words if word)
-        return acronym
-    return text
 
 def extract_patterns(text: str, patterns: dict[str, str]) -> dict[str, list[str|tuple[str]]]:
     """
@@ -478,17 +488,21 @@ def extract_and_format_data(text: str, patterns: dict[str, str]|None=None) -> di
     return formatted_data
 
 def main():
-    # Exemple d'utilisation
-    pdf_path = Path("~/data/enargia/tests/monopage.pdf").expanduser()
-
-    output_folder: Path = Path("~/data/enargia/tests/factures_separees").expanduser()
-
-    res = split_pdf_enhanced(pdf_path, output_folder)
-    print(res)
-    zip_path: Path  = Path("~/data/enargia/tests/CAPB.zip").expanduser()
+    setup_logger(2)
+    zip_path: Path  = Path("~/data/enargia/tests/zipv2.zip").expanduser()
     output_folder: Path = Path("~/data/enargia/tests/extractioon_test").expanduser()
-    res_df = process_zip(zip_path, output_folder)
-    res_df.to_csv(output_folder / "extracted_data.csv", index=False)
+
+    # Appliquer le décorateur dynamiquement
+    process_zip_with_progress = with_progress_bar("Découpage des pdfs...")(process_zip)
+    
+    # Appeler la fonction décorée
+    expected: DataFrame
+    extracted: DataFrame
+    expected, extracted = process_zip_with_progress(zip_path, output_folder)
+
+    # res_df = pd.read_csv(output_folder / "extracted_data.csv", dtype=str)
+    rapport_extraction(expected, extracted)
+    extracted.to_csv(output_folder / "extracted_data.csv", index=False)
 # def main():
 #     import argparse
 #     from rich.tree import Tree
