@@ -1,6 +1,5 @@
 import os
 import re
-import logging
 import zipfile
 import tempfile
 import shutil
@@ -351,14 +350,15 @@ def split_pdf_enhanced(pdf_path: str, output_folder: Path) -> dict[str, str]:
         split_points: list[tuple[int, str]] = []  # Liste de tuples (page_number, identifier)
         for i, page in enumerate(doc):
             extracted_data = extract_and_format_data(page.get_text())
-
+            
             if extracted_data and 'id' in extracted_data:
-                # identifier: str = extracted_data['id']
+                logger.debug(f'page#{i}: {extracted_data}')
                 split_points.append((i, extracted_data))
 
+        logger.info(f"{len(split_points)} factures trouvées.")
         # Ajouter la fin du document comme dernier point de séparation
         split_points.append((len(doc), None))
-        # print(split_points)
+
         # Créer des fichiers PDF distincts à partir des pages définies par les points de séparation
         for i in range(len(split_points) - 1):
             start_page, data = split_points[i]
@@ -383,6 +383,7 @@ def split_pdf_enhanced(pdf_path: str, output_folder: Path) -> dict[str, str]:
             apply_pdf_transformations(output_path, output_path, transformations)
 
             data['fichier_extrait'] = str(output_path)
+            data['fichier_origine'] = str(pdf_path.name)
             res.append(data)
             logger.info(f"Le fichier {output_path.name} a été extrait.")
 
@@ -442,7 +443,7 @@ def extract_patterns(text: str, patterns: dict[str, str]) -> dict[str, list[str|
             matches[key] = found.groups()
     return matches
 
-def format_extrated_data(data: dict[str, list[str|tuple[str]]]) -> dict[str, str]:
+def format_extracted_data(data: dict[str, list[str|tuple[str]]]) -> dict[str, str]:
     """
     Formate les données extraites pour les rendre plus lisibles.
 
@@ -480,11 +481,11 @@ def extract_and_format_data(text: str, patterns: dict[str, str]|None=None) -> di
         patterns = {'id': r"N° de facture\s*:\s*(\d{14})",
             'date': r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})',
             'pdl': r'Référence PDL : (\d+)',
-            'groupement': r'Regroupement de facturation\s*:\s*\((.*?)\)',
+            'groupement': r'Regroupement de facturation\s*:\s*\((.*)\)',
             'membre': r'Nom et Prénom ou\s* Raison Sociale :\s*(.*?)(?=\n|$)'
         }
     extracted_data = extract_patterns(text, patterns)
-    formatted_data = format_extrated_data(extracted_data)
+    formatted_data = format_extracted_data(extracted_data)
     return formatted_data
 
 def main():
@@ -500,9 +501,10 @@ def main():
     extracted: DataFrame
     expected, extracted = process_zip_with_progress(zip_path, output_folder)
 
-    # res_df = pd.read_csv(output_folder / "extracted_data.csv", dtype=str)
+    # expected = pd.read_csv(output_folder / "consignes.csv", dtype=str)
+    # extracted = pd.read_csv(output_folder / "extracted_data.csv", dtype=str)
     rapport_extraction(expected, extracted)
-    extracted.to_csv(output_folder / "extracted_data.csv", index=False)
+    extracted.to_csv(output_folder / "extracted_data.csv")
 # def main():
 #     import argparse
 #     from rich.tree import Tree
