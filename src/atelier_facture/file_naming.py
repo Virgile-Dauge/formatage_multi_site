@@ -104,6 +104,20 @@ def interpret_filename(filename: str, separator: str='-') -> dict[str, str]:
     
     return file_dict
 
+def abbreviate_long_text_to_acronym(text: str, max_length: int=20, max_word_length: int=8) -> str:
+    """
+    Crée un acronyme pour un texte s'il dépasse une longueur maximale spécifiée et qu'au moins un mot a une longueur supérieure ou égale à 10.
+
+    :param text: Le texte à vérifier.
+    :param max_length: La longueur maximale du texte.
+    :return: L'acronyme si une condition est remplie, ou le texte original.
+    """
+    words = text.split()
+    if len(text) > max_length and any(len(word) >= max_word_length for word in words):
+        acronym = ''.join(word[0].upper() for word in words if word)
+        return acronym
+    return text
+
 def main():
     # Test case 1: Valid 'group' format
     group_dict = {
