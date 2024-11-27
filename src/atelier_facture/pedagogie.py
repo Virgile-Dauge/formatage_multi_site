@@ -83,11 +83,12 @@ def rapport_extraction(attendu: DataFrame, extrait:DataFrame, console: Console|N
 
     total_fichiers = len(extrait)
     factures_unitaires = extrait['pdl'].notna().sum()
-    factures_groupees = extrait['id_groupement'].notna().sum()
+    factures_unitaires_attendues = attendu['pdl'].notna().sum()
+    factures_groupees = extrait['groupement'].notna().sum()
     console.print(f"Nombre total de fichiers extraits : {total_fichiers}")
-    console.print(f"Nombre de factures unitaires : {factures_unitaires}")
+    console.print(f"Nombre de factures unitaires : {factures_unitaires}/{factures_unitaires_attendues} ({factures_unitaires/factures_unitaires_attendues*100:.2f}%)")
     console.print(f"Nombre de factures groupées : {factures_groupees}")
-
+    console.print(attendu)
     # Affichage des valeurs uniques des dates
     console.print("\nDates uniques :")
     dates_uniques = extrait['date'].unique()
@@ -95,6 +96,8 @@ def rapport_extraction(attendu: DataFrame, extrait:DataFrame, console: Console|N
         console.print(f"- {date}")
 
     # TODO: Chercher les duplicatas afficher que les id uniques
+    console.print("\nID uniques avec duplicatas :")
+    duplicatas = extrait[extrait.duplicated(subset=['id'], keep=False)]
 
 def with_progress_bar(description: str = "Processing..."):
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
