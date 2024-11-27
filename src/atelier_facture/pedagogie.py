@@ -1,9 +1,13 @@
+from functools import wraps
+from rich.progress import Progress, TextColumn, BarColumn, TaskProgressColumn
+from rich.console import Console
+from typing import Callable, Any
 from rich.tree import Tree
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 from rich.table import Table
-
+from typing import Callable
 from pathlib import Path
 from pandas import DataFrame
 
@@ -72,3 +76,50 @@ def etat_avancement(console: Console, df: DataFrame, ip:Path, ep:Path, fp:Path):
             console.print(dataframe_to_table(missing_df, f"[red]Éléments manquants pour le type [bold]{type}[/bold][/red]"))
         
         console.print()  # Ligne vide pour la lisibilité
+
+def rapport_extraction(attendu: DataFrame, extrait:DataFrame, console: Console|None=None):
+    if console is None:
+        console = Console()
+
+    total_fichiers = len(extrait)
+    factures_unitaires = extrait['pdl'].notna().sum()
+    factures_groupees = extrait['id_groupement'].notna().sum()
+    console.print(f"Nombre total de fichiers extraits : {total_fichiers}")
+    console.print(f"Nombre de factures unitaires : {factures_unitaires}")
+    console.print(f"Nombre de factures groupées : {factures_groupees}")
+
+    # Affichage des valeurs uniques des dates
+    console.print("\nDates uniques :")
+    dates_uniques = extrait['date'].unique()
+    for date in sorted(dates_uniques):
+        console.print(f"- {date}")
+
+    # TODO: Chercher les duplicatas afficher que les id uniques
+
+def with_progress_bar(description: str = "Processing..."):
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            console = Console()
+            progress = Progress(
+                TextColumn("[bold blue]{task.description}", justify="right"),
+                BarColumn(bar_width=None),
+                TaskProgressColumn(),
+                console=console,
+            )
+
+            with progress:
+                task = progress.add_task(f"[cyan]{description}", total=None)
+
+                def progress_callback(current: int, total: int):
+                    if progress.tasks[task].total != total:
+                        progress.update(task, total=total)
+                    progress.update(task, completed=current)
+
+                result = func(*args, **kwargs, progress_callback=progress_callback)
+
+            return result
+
+        return wrapper
+
+    return decorator
