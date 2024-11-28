@@ -74,7 +74,8 @@ flowchart LR
 
         -->D_process1["Génération des XMLs normés Factur-X pour chaque facture à partir de facturx.csv"]
         -->D_process2["Incoporation des XMLs dans les PDFs pour générer FacturX"]
-        -->D_output@{ shape: lean-l, label: "PDFs conformes 
+        -->D_output@{ shape: lean-l, label: "Sorties :
+        PDFs conformes 
         à la norme Factur-X" }
 
     end
