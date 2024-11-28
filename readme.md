@@ -1,5 +1,90 @@
 # Atelier Facture
 
+## Fonctionnement général 
+
+```mermaid
+flowchart LR
+    %% Sous-graphe Extraction
+    subgraph Extraction_Details [Étape 1 : Extraction]
+        direction TB
+        A_input@{shape: lean-r, label: "Entrées : 
+        Zip"} 
+        --> A_process1[unzip]
+        --> A_process2[Découpage des PDFs]
+        --> A_process3[Extraction des données pdfs]
+        --> A_output@{ shape: lean-l, label: "Sorties : 
+        1 PDF par facture, 
+        consignes.csv, facturx.csv 
+        extrait.csv"}
+    end
+
+
+    %% Sous-graphe Consolidation
+    subgraph Consolidation_Details [Étape 2 : Consolidation]
+        direction TB
+        B_input@{shape: lean-r, label: "Entrées : 
+        consignes.csv
+        extrait.csv"}
+        --> B_process1["Lien entre groupement
+        et id facture, création de 
+        la clé id pour les groupements"]
+        --> B_process2["Fusion des données
+        consignes et extrait
+        sur la clé id"]
+        --> B_output@{ shape: lean-l, label: "Sorties : 
+        consignes_consolidees.csv" }
+    end
+
+    %% Sous-graphe Fusion
+    subgraph Fusion_Details [Étape 3 : Fusion]
+        direction TB
+        C_input@{shape: lean-r, label: "Entrées : 
+        consignes_consolidees.csv
+        PDFs de factures"}
+        C_processA1["Tableau récapitulatif"]
+        C_processA2["Création Facture enrichie :
+        Facture groupement 
+        + Tableau récapitulatif
+        + Factures unitaires"]
+        C_processB["Création des factures
+        groupement mono :
+        Copie facture unitaire
+        Ajout texte regroupement
+        création pdf suivant la 
+        convention de nommage 
+        des groupements"]
+        C_output@{ shape: lean-l, label: "Sorties :
+        PDFs groupements enrichis
+        PDFs groupements mono" }
+        C_input --> C_processA1 --> C_processA2
+        C_processA2 --> C_output
+        C_input --> C_processB
+        C_processB --> C_output
+        
+    end
+
+    %% Sous-graphe FacturX
+    subgraph FacturX_Details [Étape 4 : FacturX]
+        direction TB
+        D_input@{shape: lean-r, label: "Entrées :
+        PDFs de factures unitaires
+        PDFs groupements enrichis
+        PDFs groupements mono
+        facturx.csv"}
+
+        -->D_process1["Génération des XMLs normés Factur-X pour chaque facture à partir de facturx.csv"]
+        -->D_process2["Incoporation des XMLs dans les PDFs pour générer FacturX"]
+        -->D_output@{ shape: lean-l, label: "PDFs conformes 
+        à la norme Factur-X" }
+
+    end
+
+    %% Liaisons entre sous-graphes
+    Extraction_Details --> Consolidation_Details
+    Consolidation_Details --> Fusion_Details
+    Fusion_Details --> FacturX_Details
+```
+# Doc plus très à jour passée ce titre 😓
 ## Description
 
 Ce programme permet de préparer et consolider des factures pour leur destination finale. Il traite 4 types de facturations :
@@ -134,3 +219,6 @@ On trouve le pdf de facture individuelle correspondant au pdl, on y ajoute dans 
 - `fusion.py` : Fonctions pour la création des pdfs de groupement enrichits d'un tableau récapitulatif et des factures unitaires
 - `mpl.py` : Fonction matplotlib pour la création des tableaux récapitulatifs
 - `empaquetage.py` : Récupération des données et création des tableaux pour export avec la lib [facturix](https://github.com/Virgile-Dauge/facturix)
+
+
+
