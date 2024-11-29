@@ -204,6 +204,30 @@ Les données des fichiers **consignes** et **extrait** sont fusionnées sur la c
 
 La dataframe `consignes_consolidées` contient toutes les informations nécessaires pour réaliser les étapes suivantes. Un export CSV est réalisé sous le nom **consignes_consolidées.csv**.
 
+## Étape 3 : Fusion
+
+L'étape de fusion se concentre sur la création des factures de groupement enrichies et des factures de groupement mono PDL.
+
+### Création des factures de groupement enrichies (type == groupement)
+
+Pour chaque groupement identifié dans la dataframe `consignes_consolidées` qui nécessite un enrichissement, une facture de groupement enrichie est générée. Cette facture regroupe toutes les factures individuelles associées au groupement, permettant ainsi une vue d'ensemble pour les membres du groupement.
+
+Le code de la fonction `fusion_groupes` est utilisé pour réaliser cette fusion. Les étapes principales incluent :
+
+- **Tri des données** par `membre`, `groupement`, `type` et `pdl` afin de garantir une organisation cohérente.
+- **Création d'un tableau récapitulatif** contenant les informations de chaque PDL, exporté sous forme de PDF.
+- **Concaténation des fichiers PDF** : Les différentes parties (facture de regroupement, tableau récapitulatif, factures individuelles) sont fusionnées pour créer un fichier PDF unique pour le groupement.
+
+### Création des factures de groupement mono PDL (type == mono)
+
+Pour les groupements mono PDL (identifiés par un groupement unique, par exemple **G** ou **J**), une facture de groupement spécifique est créée avec la convention de nommage des groupements définie dans `file_naming`.
+Les factures de groupement mono PDL sont générées en appliquant des transformations spécifiques, telles que l'ajout de lignes de regroupement au document PDF. La fonction `apply_pdf_transformations` est utilisée pour appliquer ces modifications.
+
+### Export des Factures Fusionnées
+
+Les factures fusionnées sont exportées dans un dossier spécifique sous forme de fichiers PDF, prêtes à être utilisées pour les étapes suivantes du processus.
+Après avoir créé ou enrichi les fichiers PDF de chaque groupement, la colonne `pdf` de la dataframe est mise à jour avec le chemin du fichier PDF créé. Pour les entrées où aucun fichier enrichi n'est défini, le chemin du fichier extrait est copié dans la colonne `pdf`.
+
 # Doc plus très à jour passée ce titre 😓
 
 ## Description
