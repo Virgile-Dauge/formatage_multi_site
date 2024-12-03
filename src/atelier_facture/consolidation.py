@@ -20,7 +20,7 @@ def detection_type(df: DataFrame) -> DataFrame:
 
     return df
 
-def consolidation(extrait: DataFrame, consignes: DataFrame) -> DataFrame:
+def consolidation_consignes(extrait: DataFrame, consignes: DataFrame) -> DataFrame:
     consignes['id'] = consignes['id'].astype(str).apply(
         lambda x: str(int(float(x))).zfill(14) if x and x.replace('.', '', 1).isdigit() and x.endswith('.0') else x
     )
@@ -38,3 +38,21 @@ def consolidation(extrait: DataFrame, consignes: DataFrame) -> DataFrame:
 
     consolide = consolide.loc[:, ~consolide.columns.str.startswith('Unnamed')]
     return consolide
+
+def consolidation_facturx(consignes_consolidees: DataFrame, facturx: DataFrame) -> DataFrame:
+
+    # Filtrer les lignes de 'consignes' où 'type' est égal à 'groupement'
+    consignes_groupement = consignes_consolidees[consignes_consolidees['type'] == 'groupement']
+    print(consignes_groupement.columns)
+    print(facturx.columns)
+    facturx = facturx.merge(consignes_groupement[['groupement', 'id']], on='groupement', how='left', suffixes=('', '_consignes'))
+
+    if 'id_consignes' in facturx.columns:
+        facturx['id'] = facturx['id'].combine_first(facturx['id_consignes'])
+        facturx.drop(columns=['id_consignes'], inplace=True)
+
+    # facturx.drop(columns=['id_consignes', 'groupement'], inplace=True)
+    facturx['id'] = facturx['id'].astype(str).apply(
+        lambda x: str(int(float(x))).zfill(14) if x and x.replace('.', '', 1).isdigit() and x.endswith('.0') else x
+    )
+    return facturx
