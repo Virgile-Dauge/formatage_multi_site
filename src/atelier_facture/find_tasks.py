@@ -10,9 +10,10 @@ from rich.tree import Tree
 from logger_config import setup_logger, logger
 from file_naming import compose_filename
 from mpl import export_table_as_pdf
-from pdf_utils import concat_pdfs, ajouter_ligne_regroupement_doc, apply_pdf_transformations
+from pdf_utils import concat_pdfs, ajouter_ligne_regroupement_doc, apply_pdf_transformations, compress_pdf_inplace
 from pedagogie import afficher_arborescence_travail, etat_avancement
 from extraction import process_zip
+from consolidation import consolidation_consignes, consolidation_facturx
 from facturix import process_invoices
 
 def detection(df: DataFrame):
@@ -38,9 +39,6 @@ def detection(df: DataFrame):
     unique_groupements = groupement_counts[groupement_counts == 1].index
     df.loc[df['groupement'].isin(unique_groupements), 'type'] = 'mono'
 
-
-
-
 def fusion_groupes(df: DataFrame, output_dir: Path):
 
     df.sort_values(['membre', 'groupement', 'type', 'pdl'], inplace=True)
@@ -55,7 +53,7 @@ def fusion_groupes(df: DataFrame, output_dir: Path):
     # Parcourir chaque groupement
     for group_name, group_data in grouped:
         group_meta = group_data.iloc[0].to_dict()
- 
+        
         enhanced_pdf = output_dir / f"{compose_filename(group_meta, format_type='groupement')}.pdf"
         # Création du PDF enrichi pour le groupement Mono
         if group_meta['type'] == 'mono':
@@ -78,6 +76,7 @@ def fusion_groupes(df: DataFrame, output_dir: Path):
             table_name = output_dir / f"{compose_filename(group_meta, format_type='table')}.pdf"
             export_table_as_pdf(pdl.drop(columns=meta_columns), table_name)
 
+
             # On ajoute le tableau crée  
             to_concat += [table_name]
             # Liste des PRM pour ce groupement (exclure les valeurs manquantes)
@@ -91,6 +90,7 @@ def fusion_groupes(df: DataFrame, output_dir: Path):
             
             # Fichier de groupement enrichi 
             concat_pdfs(to_concat, enhanced_pdf)
+            compress_pdf_inplace(enhanced_pdf)
         
         # Mettre à jour la colonne 'fichier_enrichi' pour ce groupement
         df.loc[df['id'] == group_meta['id'], 'pdf'] = enhanced_pdf
@@ -100,16 +100,14 @@ def fusion_groupes(df: DataFrame, output_dir: Path):
     df.loc[mask_non_defini, 'pdf'] = df.loc[mask_non_defini, 'fichier_extrait']
     return df
 
-def vers_facturx(df: DataFrame, csv: Path, output_dir: Path):
-    # Charger le CSV dans une DataFrame BT
-    bt_df = pd.read_csv(csv, dtype=str)
+def vers_facturx(consignes: DataFrame, facturx: DataFrame, output_dir: Path):
     
     # Fusionner bt_df avec df en utilisant 'BT-1' et 'id' comme clés
-    merged_df = pd.merge(bt_df, df[['id', 'pdf']], left_on='BT-1', right_on='id', how='left')
-
+    merged_df = pd.merge(facturx, consignes[['id', 'pdf']], on='id', how='left')
+    merged_df = merged_df.rename(columns={'id': 'BT-1'})
     # Supprimer la colonne 'id', elle n'est pas nécessaire après la fusion
-    merged_df = merged_df.drop('id', axis=1)
-
+    #merged_df = merged_df.drop('id', axis=1)
+    print(merged_df)
     errors = process_invoices(merged_df, output_dir, output_dir, conform_pdf=False)
     return errors
 
@@ -140,20 +138,31 @@ def main():
 
     # =======================Étape 1: Extraction des données===========================
     if args.input:
+        console.print(Panel.fit("Étape 1: Extraction des données", style="bold magenta"))
         input_path = Path(args.input).expanduser()
-        extract_df = process_zip(input_path, ip)
+        extrait, consignes = process_zip(input_path, ip)
+        extrait.to_csv(ip / 'extrait.csv')
+    else:
+        extrait = pd.read_csv(ip / 'extrait.csv', sep=',', encoding='utf-8', dtype=str)
+        consignes = pd.read_csv(ip / 'consignes.csv', sep=',', encoding='utf-8', dtype=str)
+    facturx = pd.read_csv(ip / 'facturx.csv', sep=',', encoding='utf-8', dtype=str)
+    # =======================Étape 2: Consolidation====================================
+    console.print(Panel.fit("Étape 2: Consolidation", style="bold magenta"))
+    consignes = consolidation_consignes(extrait, consignes)
+    consignes.to_csv(p / 'consignes_consolidees.csv')
 
-    # =======================Étape 2: Lecture des consignes============================
-    df = pd.read_csv(p / 'todo.csv', sep=',', encoding='utf-8', dtype=str)
-    print(df)
-    detection(df)
-    etat_avancement(console, df, ip, ep, fp)
+    facturx = consolidation_facturx(consignes, facturx)
+    facturx.to_csv(p / 'facturx_consolidees.csv')
+    # etat_avancement(console, df, ip, ep, fp)
 
     # =======================Étape 3: Création des pdfs enrichis=======================
-    result = fusion_groupes(df, ep)
+    console.print(Panel.fit("Étape 3: Création des pdfs enrichis", style="bold magenta"))
+    result = fusion_groupes(consignes, ep)
+    print(result)
     #etat_avancement(console, df, ip, ep, fp)
     # =======================Étape 4: Création des factures Factur-X===================
-    bt_df = vers_facturx(df, p / 'bt.csv', fp)
+    console.print(Panel.fit("Étape 4: Création des factures Factur-X", style="bold magenta"))
+    bt_df = vers_facturx(consignes, facturx, fp)
 
 if __name__ == "__main__":
     main()
