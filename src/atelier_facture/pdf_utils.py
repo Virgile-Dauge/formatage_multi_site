@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import os
+import shutil
 import tempfile
 import pymupdf
 
@@ -14,6 +15,49 @@ def human_readable_size(size_in_bytes: int) -> str:
             return f"{size_in_bytes:.2f} {unit}"
         size_in_bytes /= 1024.0
     return f"{size_in_bytes:.2f} PB"
+
+def compress_pdf_inplace(input_path: Path):
+    """
+    Compress a PDF file in place using PyMuPDF.
+
+    :param input_path: Path to the input PDF file, which will be modified in place.
+    """
+    original_size = input_path.stat().st_size
+    try:
+        # Ouvrir le document avec PyMuPDF
+        doc = pymupdf.open(str(input_path))
+
+        # Créer un fichier temporaire pour sauvegarder le PDF compressé
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        temp_output_path = temp_file.name
+        temp_file.close()  # Fermer le fichier temporaire pour l'utiliser avec PyMuPDF
+
+        # Sauvegarder le document compressé dans le fichier temporaire
+        doc.save(temp_output_path,
+                 garbage=4,  # clean up unreferenced objects
+                 deflate=True,  # compress streams
+                 deflate_images=True,
+                 clean=True,  # clean up redundant objects
+                 pretty=True,  # make PDF human-readable
+                 linear=True)  # optimize for web viewing
+        doc.close()
+
+        # Remplacer le fichier d'origine par le fichier compressé
+        shutil.move(temp_output_path, input_path)
+
+        # Calculer la taille de compression
+        compressed_size = input_path.stat().st_size
+        compression_ratio = (1 - (compressed_size / original_size)) * 100
+
+        logger.debug(f"Compressed {input_path.name} ({compression_ratio:.2f}%).")
+
+    except Exception as e:
+        logger.error(f"Error compressing {input_path.name}: {str(e)}")
+
+    finally:
+        # S'assurer que le fichier temporaire est supprimé s'il existe encore
+        if Path(temp_output_path).exists():
+            Path(temp_output_path).unlink()
 
 def compress_pdf(input_path: Path, output_path: Path):
     """
