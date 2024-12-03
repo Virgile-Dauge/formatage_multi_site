@@ -1,4 +1,5 @@
 import pandas as pd
+from pandas import DataFrame
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
@@ -17,7 +18,33 @@ logger = logging.getLogger()
 # Supprimer les messages de débogage de font_manager
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
-def export_table_as_pdf(df, pdf_filename):
+def prepare_dataframe(df: DataFrame, exclude=['id', 'pdl'], to_drop=['PRM', 'groupement', 'membre']) -> DataFrame:
+    convertible_columns = []
+
+    # Parcourir toutes les colonnes, vérifier si elles sont des floats ou des chaînes (à l'exception de celles à exclure)
+    for col in df.columns:
+        if col not in exclude and df[col].dtype in ['float64', 'object', 'str']:
+            # Vérifier si tous les éléments de la colonne peuvent être convertis en float
+            try:
+                pd.to_numeric(df[col], errors='raise')
+                convertible_columns.append(col)
+            except ValueError:
+                # Ignorer les colonnes qui ne peuvent pas être converties entièrement
+                continue
+
+    # Convertir les colonnes convertibles en float
+    df[convertible_columns] = df[convertible_columns].apply(pd.to_numeric, errors='coerce')
+
+    # Arrondir toutes les colonnes de type float à deux décimales
+    df[convertible_columns] = df[convertible_columns].round(2)
+
+    for col in to_drop:
+        if col in df.columns:
+            df = df.drop(columns=[col])
+
+    return df
+
+def export_table_as_pdf(df: DataFrame, pdf_filename):
     # Fixe la police utilisee
     plt.rcParams['font.family'] = 'DejaVu Sans'
     rows_per_page = 40
@@ -25,8 +52,8 @@ def export_table_as_pdf(df, pdf_filename):
     num_pages = len(df) // rows_per_page + int(len(df) % rows_per_page != 0)
 
     # Modifier le dataframe Pandas
-    df = df.drop(columns=["groupement"])
-    df = df.round(2)
+    df = prepare_dataframe(df)
+
     df_columns = []
     df_columns.append(df.columns[0])
     for col in df.columns[1:]:
@@ -83,8 +110,8 @@ def export_table_as_pdf(df, pdf_filename):
 
 
             # Bordures de la table
-            table.auto_set_column_width([0, 1, 2])  # Ajuste automatiquement la largeur des colonnes
-
+            table.auto_set_column_width([0, 1, 2, 3])  # Ajuste automatiquement la largeur des colonnes
+            # table.auto_set_column_width(range(len(df.columns)))
             pdf.savefig(fig, bbox_inches='tight')
 
             plt.close(fig)
