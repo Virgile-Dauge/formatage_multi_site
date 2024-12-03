@@ -423,7 +423,7 @@ def process_zip(
         extract_files_from_zip(input_path, output_dir, files_to_extract)
 
         expected : Path = output_dir / files_to_extract[0]
-        return pd.read_csv(expected, dtype=str), pd.DataFrame(read)
+        return pd.DataFrame(read), pd.read_csv(expected, dtype=str)
     
     finally:
         shutil.rmtree(temp_dir)  # Clean up temp directory
@@ -462,7 +462,8 @@ def format_extracted_data(data: dict[str, list[str|tuple[str]]]) -> dict[str, st
             formatted_data[key] = value
 
     if 'pdl' in formatted_data and len(formatted_data['pdl']) == 9:
-        formatted_data['id_groupement'] = formatted_data.pop('pdl')
+    #     formatted_data['id_groupement'] = formatted_data.pop('pdl')
+        formatted_data.pop('pdl')
     
     if 'membre' in formatted_data:
         formatted_data['membre'] = abbreviate_long_text_to_acronym(formatted_data['membre'], 15)
@@ -479,7 +480,8 @@ def extract_and_format_data(text: str, patterns: dict[str, str]|None=None) -> di
     """
     if patterns is None:
         patterns = {'id': r"N° de facture\s*:\s*(\d{14})",
-            'date': r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})',
+            # 'date': r'VOTRE FACTURE\s*(?:DE\s*RESILIATION\s*)?DU\s*(\d{2})\/(\d{2})\/(\d{4})',
+            'date': r"VOTRE.*?DU\s+(\d{2})/(\d{2})/(\d{4})",
             'pdl': r'Référence PDL : (\d+)',
             'groupement': r'Regroupement de facturation\s*:\s*\((.*)\)',
             'membre': r'Nom et Prénom ou\s* Raison Sociale :\s*(.*?)(?=\n|$)'
@@ -490,7 +492,7 @@ def extract_and_format_data(text: str, patterns: dict[str, str]|None=None) -> di
 
 def main():
     setup_logger(2)
-    zip_path: Path  = Path("~/data/enargia/tests/zipv2.zip").expanduser()
+    zip_path: Path  = Path("~/data/enargia/tests/test_avoir.zip").expanduser()
     output_folder: Path = Path("~/data/enargia/tests/extractioon_test").expanduser()
 
     # Appliquer le décorateur dynamiquement
@@ -499,13 +501,13 @@ def main():
     # Appeler la fonction décorée
     expected: DataFrame
     extracted: DataFrame
-    # expected, extracted = process_zip_with_progress(zip_path, output_folder)
+    expected, extracted = process_zip_with_progress(zip_path, output_folder)
 
-    expected = pd.read_csv(output_folder / "consignes.csv", dtype=str)
-    extracted = pd.read_csv(output_folder / "extracted_data.csv", dtype=str)
+    # expected = pd.read_csv(output_folder / "consignes.csv", dtype=str)
+    # extracted = pd.read_csv(output_folder / "extracted_data.csv", dtype=str)
     from find_tasks import detection
     detection(expected)
-    rapport_extraction(expected, extracted)
+    # rapport_extraction(expected, extracted)
 
     # Filtrer les lignes de 'attendu' où 'type' est 'groupement'
     condition = (expected['type'] == 'groupement')
