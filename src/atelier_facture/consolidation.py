@@ -21,13 +21,20 @@ def detection_type(df: DataFrame) -> DataFrame:
     return df
 
 def consolidation(extrait: DataFrame, consignes: DataFrame) -> DataFrame:
+    consignes['id'] = consignes['id'].astype(str).apply(
+        lambda x: str(int(float(x))).zfill(14) if x and x.replace('.', '', 1).isdigit() and x.endswith('.0') else x
+    )
     consignes = detection_type(consignes)
-    condition = (consignes['type'] == 'groupement')
+    # Filtrer les lignes de 'consignes' où 'type' est égal à 'groupement'
+    consignes_groupement = consignes[consignes['type'] == 'groupement']
 
-    # Récupération des id des factures de groupements à partir de la clé "groupement"
-    merged_groupement = consignes[condition].merge(extrait, on='groupement', how='left', suffixes=('', '_extrait'))
-    consignes.loc[condition, 'id'] = merged_groupement['id_extracted']
+    # Faire un merge entre 'consignes_groupement' et 'extrait' sur la clé 'groupement'
+    merged = consignes_groupement.merge(extrait[['groupement', 'id']], on='groupement', suffixes=('_consignes', '_extrait'))
+    # Mettre à jour la colonne 'id' de 'consignes' à partir de 'id' de 'extrait'
+    consignes.loc[consignes['type'] == 'groupement', 'id'] = merged['id_extrait'].values
 
     # Fusion des données extraites dans les consignes sur clé "id"
-    consolide = consignes.merge(extrait, on='id', how='left')
+    consolide = consignes.merge(extrait[['id', 'date', 'fichier_extrait']], on='id', how='left', suffixes=('', '_extrait'))
+
+    consolide = consolide.loc[:, ~consolide.columns.str.startswith('Unnamed')]
     return consolide
