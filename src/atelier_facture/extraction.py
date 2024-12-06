@@ -378,7 +378,7 @@ def split_pdf_enhanced(pdf_path: str, output_folder: Path) -> dict[str, str]:
                 (remplacer_texte_doc, "Votre espace client  : https://client.enargia.eus", "Votre espace client : https://suiviconso.enargia.eus"),
                 (caviarder_texte_doc, "Votre identifiant :", 290, 45),
             ]
-            if format_type == 'group':
+            if format_type == 'groupement':
                 transformations.append((ajouter_ligne_regroupement_doc, data['groupement']))
             apply_pdf_transformations(output_path, output_path, transformations)
 
