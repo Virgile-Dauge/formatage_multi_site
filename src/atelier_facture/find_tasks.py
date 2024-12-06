@@ -10,7 +10,7 @@ from rich.tree import Tree
 from logger_config import setup_logger, logger
 from file_naming import compose_filename
 from mpl import export_table_as_pdf
-from pdf_utils import concat_pdfs, ajouter_ligne_regroupement_doc, apply_pdf_transformations, compress_pdf_inplace
+from pdf_utils import concat_pdfs, ajouter_ligne_regroupement_doc, apply_pdf_transformations, compress_pdf_inplace, compress_pdf
 from pedagogie import afficher_arborescence_travail, etat_avancement
 from extraction import process_zip
 from consolidation import consolidation_consignes, consolidation_facturx
@@ -41,12 +41,12 @@ def detection(df: DataFrame):
 
 def fusion_groupes(df: DataFrame, output_dir: Path):
 
-    df.sort_values(['membre', 'groupement', 'type', 'pdl'], inplace=True)
+    df.sort_values(['groupement', 'type', 'pdl'], inplace=True)
     # Ajout de la colonne 'fichier_enrichi' si elle n'existe pas
     if 'pdf' not in df.columns:
         df['pdf'] = ''
 
-    meta_columns = ['fichier_extrait','pdf', 'type', 'date']
+    meta_columns = ['fichier_extrait', 'pdf', 'type', 'date']
     # Grouper par 'groupement'
     grouped = df.groupby('groupement')
     
@@ -87,9 +87,11 @@ def fusion_groupes(df: DataFrame, output_dir: Path):
                     logger.warning(f"Pas de 'fichier_extrait' {row['id']} : fichier enrichi groupement {row['groupement']} créé sans.")
                 else:
                     to_concat.append(fichier)
-            
+
             # Fichier de groupement enrichi 
             concat_pdfs(to_concat, enhanced_pdf)
+            # compressed_pdf = enhanced_pdf.with_name(f"{enhanced_pdf.stem}_compressed{enhanced_pdf.suffix}")
+            # compress_pdf(enhanced_pdf, compressed_pdf)
             compress_pdf_inplace(enhanced_pdf)
         
         # Mettre à jour la colonne 'fichier_enrichi' pour ce groupement
@@ -120,7 +122,7 @@ def main():
     args = parser.parse_args()
 
     # Configuration des loggs based on verbosity
-    setup_logger(args.verbose)
+    setup_logger(args.verbose, log_file="app.log")
     console = Console()
 
     p = Path(args.atelier_path).expanduser()
