@@ -227,26 +227,6 @@ def main():
     extracted: DataFrame
     expected, extracted = process_zip_with_progress(zip_path, output_folder)
 
-    # expected = pd.read_csv(output_folder / "consignes.csv", dtype=str)
-    # extracted = pd.read_csv(output_folder / "extracted_data.csv", dtype=str)
-    from find_tasks import detection
-    detection(expected)
-    # rapport_extraction(expected, extracted)
-
-    # Filtrer les lignes de 'attendu' où 'type' est 'groupement'
-    condition = (expected['type'] == 'groupement')
-
-    expected['id'] = None
-    # Fusionner les lignes avec 'groupement' comme critère
-    merged_groupement = expected[condition].merge(extracted, on='groupement', how='left', suffixes=('', '_extracted'))
-    expected.loc[condition, 'id'] = merged_groupement['id_extracted']
-
-    # Fusionner les autres lignes avec 'pdl' comme critère
-    merged_pdl = expected[~condition].merge(extracted, on='pdl', how='left', suffixes=('', '_extracted'))
-    expected.loc[~condition, 'id'] = merged_pdl['id_extracted']
-    # extracted.to_csv(output_folder / "extracted_data.csv")
-    expected.to_csv(output_folder / "consignes_consolidées.csv")
-
 if __name__ == "__main__":
     main()
 
