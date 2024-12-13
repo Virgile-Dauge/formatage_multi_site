@@ -13,43 +13,7 @@ from fusion import fusion_groupes
 from pedagogie import afficher_arborescence_travail, etat_avancement
 from extraction import process_zip
 from consolidation import consolidation_consignes, consolidation_facturx
-from facturix import process_invoices
-
-def detection(df: DataFrame):
-    """
-    Détecte et attribue le type d'entrée pour chaque ligne du DataFrame.
-
-    Cette fonction catégorise chaque ligne du DataFrame en 'groupement', 'pdl', ou 'mono'
-    en fonction des valeurs dans les colonnes 'pdl' et 'groupement'.
-
-    Args:
-        df (DataFrame): Le DataFrame à analyser.
-
-    Returns:
-        None: La fonction modifie le DataFrame en place.
-    """
-    df['type'] = 'Indeterminé'
-    group_mask = (df['pdl'].isna() | (df['pdl'] == ''))
-    df.loc[group_mask, 'type'] = 'groupement'
-    df.loc[~group_mask, 'type'] = 'pdl'
-
-    # Detection 'mono' type for unique values in 'groupement' column
-    groupement_counts = df['groupement'].value_counts()
-    unique_groupements = groupement_counts[groupement_counts == 1].index
-    df.loc[df['groupement'].isin(unique_groupements), 'type'] = 'mono'
-
-
-
-def vers_facturx(consignes: DataFrame, facturx: DataFrame, output_dir: Path):
-    
-    # Fusionner bt_df avec df en utilisant 'BT-1' et 'id' comme clés
-    merged_df = pd.merge(facturx, consignes[['id', 'pdf']], on='id', how='left')
-    merged_df = merged_df.rename(columns={'id': 'BT-1'})
-    # Supprimer la colonne 'id', elle n'est pas nécessaire après la fusion
-    #merged_df = merged_df.drop('id', axis=1)
-    print(merged_df)
-    errors = process_invoices(merged_df, output_dir, output_dir, conform_pdf=False)
-    return errors
+from facturx import vers_facturx
 
 def main():
     parser = argparse.ArgumentParser(description="Traitement des factures")
