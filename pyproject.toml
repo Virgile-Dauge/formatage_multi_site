@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "atelier-facture"
+version = "1.0.17"
+description = ""
+authors = ["Virgile <virgile.dauge@pm.me>"]
+license = "GPLv3"
+readme = "readme.md"
+repository = "https://github.com/Virgile-Dauge/formatage_multi_site"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pandas = "^2.2.3"
+rich = "^13.9.4"
+pymupdf = "^1.25.1"
+facturix = "^1.0.4"
+matplotlib = "^3.9.4"
+
+[tool.poetry.scripts]
+atelier_facture = "atelier_facture.atelier_facture:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

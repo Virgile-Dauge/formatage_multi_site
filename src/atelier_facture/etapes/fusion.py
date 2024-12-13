@@ -2,8 +2,8 @@ from pathlib import Path
 import pandas as pd
 from pandas import DataFrame
 
-from utils import file_naming, pdf_utils, export_table_as_pdf
-from utils import logger
+from atelier_facture.utils import file_naming, pdf_utils, export_table_as_pdf
+from atelier_facture.utils import logger
 
 def fusion_groupes(df: DataFrame, output_dir: Path):
 

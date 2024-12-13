@@ -1,16 +1,12 @@
 import argparse
 import pandas as pd
-from pandas import DataFrame
 from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
-from rich.text import Text
-from rich.tree import Tree
 
-from utils import setup_logger, logger
+from atelier_facture import utils
 
-from pedagogie import afficher_arborescence_travail, etat_avancement
-from etapes import extraction, consolidation, fusion, formatage
+from atelier_facture.etapes import extraction, consolidation, fusion, formatage
 def main():
     parser = argparse.ArgumentParser(description="Traitement des factures")
     parser.add_argument("atelier_path", type=str, help="Chemin du répertoire atelier")
@@ -20,7 +16,7 @@ def main():
     args = parser.parse_args()
 
     # Configuration des loggs based on verbosity
-    setup_logger(args.verbose, log_file="app.log")
+    utils.setup_logger(args.verbose, log_file="app.log")
     console = Console()
 
     p = Path(args.atelier_path).expanduser()
@@ -34,7 +30,7 @@ def main():
 
     # =======================Étape 0: Définition du répertoire de travail==============
     console.print(Panel.fit("Étape 0: Définition du répertoire de travail", style="bold magenta"))
-    afficher_arborescence_travail(console, p, ip, ep, fp)
+    utils.pedagogie.afficher_arborescence_travail(console, p, ip, ep, fp)
 
     # =======================Étape 1: Extraction des données===========================
     if args.input:

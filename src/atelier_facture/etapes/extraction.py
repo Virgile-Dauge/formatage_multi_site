@@ -10,10 +10,9 @@ from typing import Callable
 import pandas as pd
 from pandas import DataFrame
 
-from utils import pdf_utils, file_naming
-from pedagogie import with_progress_bar
+from atelier_facture.utils import pdf_utils, file_naming, pedagogie
 
-from utils import logger, setup_logger
+from atelier_facture.utils import logger, setup_logger
 
 def extract_nested_pdfs(input_path: Path) -> Path:
     """
@@ -219,7 +218,7 @@ def main():
     output_folder: Path = Path("~/data/enargia/tests/extractioon_test").expanduser()
 
     # Appliquer le décorateur dynamiquement
-    process_zip_with_progress = with_progress_bar("Découpage des pdfs...")(process_zip)
+    process_zip_with_progress = pedagogie.with_progress_bar("Découpage des pdfs...")(process_zip)
     
     # Appeler la fonction décorée
     expected: DataFrame

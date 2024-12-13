@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import pymupdf
 
-from utils import logger
+from atelier_facture.utils import logger
 # ====================== Utilitaires =======================
 
 def human_readable_size(size_in_bytes: int) -> str:
