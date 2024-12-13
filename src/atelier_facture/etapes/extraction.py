@@ -10,11 +10,10 @@ from typing import Callable
 import pandas as pd
 from pandas import DataFrame
 
-from pdf_utils import remplacer_texte_doc, caviarder_texte_doc, ajouter_ligne_regroupement_doc, apply_pdf_transformations, partial_pdf_copy
-from file_naming import compose_filename, abbreviate_long_text_to_acronym
+from utils import pdf_utils, file_naming
 from pedagogie import with_progress_bar
 
-from logger_config import logger, setup_logger
+from utils import logger, setup_logger
 
 def extract_nested_pdfs(input_path: Path) -> Path:
     """
@@ -91,7 +90,7 @@ def format_extracted_data(data: dict[str, list[str|tuple[str]]]) -> dict[str, st
         formatted_data.pop('pdl')
     
     if 'membre' in formatted_data:
-        formatted_data['membre'] = abbreviate_long_text_to_acronym(formatted_data['membre'], 15)
+        formatted_data['membre'] = file_naming.abbreviate_long_text_to_acronym(formatted_data['membre'], 15)
 
     return formatted_data
 
@@ -153,21 +152,21 @@ def split_pdf_enhanced(pdf_path: str, output_folder: Path) -> dict[str, str]:
 
             # Composer le nom de fichier
             format_type = 'pdl' if 'pdl' in data else 'groupement'
-            filename = compose_filename(data, format_type)
+            filename = file_naming.compose_filename(data, format_type)
             
             # Définir le chemin de sauvegarde du fichier PDF
             output_path: Path = output_folder / f"{filename}.pdf"
           
             # Créer le PDF avec les pages séléctionnées
-            partial_pdf_copy(doc, start_page, end_page, output_path)
+            pdf_utils.partial_pdf_copy(doc, start_page, end_page, output_path)
 
             transformations = [
-                (remplacer_texte_doc, "Votre espace client  : https://client.enargia.eus", "Votre espace client : https://suiviconso.enargia.eus"),
-                (caviarder_texte_doc, "Votre identifiant :", 290, 45),
+                (pdf_utils.remplacer_texte_doc, "Votre espace client  : https://client.enargia.eus", "Votre espace client : https://suiviconso.enargia.eus"),
+                (pdf_utils.caviarder_texte_doc, "Votre identifiant :", 290, 45),
             ]
             if format_type == 'groupement':
-                transformations.append((ajouter_ligne_regroupement_doc, data['groupement']))
-            apply_pdf_transformations(output_path, output_path, transformations)
+                transformations.append((pdf_utils.ajouter_ligne_regroupement_doc, data['groupement']))
+            pdf_utils.apply_pdf_transformations(output_path, output_path, transformations)
 
             data['fichier_extrait'] = str(output_path)
             data['fichier_origine'] = str(pdf_path.name)

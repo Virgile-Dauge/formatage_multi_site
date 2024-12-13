@@ -7,14 +7,10 @@ from rich.panel import Panel
 from rich.text import Text
 from rich.tree import Tree
 
-from logger_config import setup_logger, logger
-from fusion import fusion_groupes
+from utils import setup_logger, logger
 
 from pedagogie import afficher_arborescence_travail, etat_avancement
-from extraction import process_zip
-from consolidation import consolidation_consignes, consolidation_facturx
-from facturx import vers_facturx
-
+from etapes import extraction, consolidation, fusion, formatage
 def main():
     parser = argparse.ArgumentParser(description="Traitement des factures")
     parser.add_argument("atelier_path", type=str, help="Chemin du répertoire atelier")
@@ -44,7 +40,7 @@ def main():
     if args.input:
         console.print(Panel.fit("Étape 1: Extraction des données", style="bold magenta"))
         input_path = Path(args.input).expanduser()
-        extrait, consignes = process_zip(input_path, ip)
+        extrait, consignes = extraction.process_zip(input_path, ip)
         extrait.to_csv(ip / 'extrait.csv')
     else:
         extrait = pd.read_csv(ip / 'extrait.csv', sep=',', encoding='utf-8', dtype=str)
@@ -52,21 +48,21 @@ def main():
     facturx = pd.read_csv(ip / 'facturx.csv', sep=',', encoding='utf-8', dtype=str)
     # =======================Étape 2: Consolidation====================================
     console.print(Panel.fit("Étape 2: Consolidation", style="bold magenta"))
-    consignes = consolidation_consignes(extrait, consignes)
+    consignes = consolidation.consolidation_consignes(extrait, consignes)
     consignes.to_csv(p / 'consignes_consolidees.csv')
 
-    facturx = consolidation_facturx(consignes, facturx)
+    facturx = consolidation.consolidation_facturx(consignes, facturx)
     facturx.to_csv(p / 'facturx_consolidees.csv')
     # etat_avancement(console, df, ip, ep, fp)
 
     # =======================Étape 3: Création des pdfs enrichis=======================
     console.print(Panel.fit("Étape 3: Création des pdfs enrichis", style="bold magenta"))
-    result = fusion_groupes(consignes, ep)
+    result = fusion.fusion_groupes(consignes, ep)
     print(result)
     #etat_avancement(console, df, ip, ep, fp)
     # =======================Étape 4: Création des factures Factur-X===================
     console.print(Panel.fit("Étape 4: Création des factures Factur-X", style="bold magenta"))
-    bt_df = vers_facturx(consignes, facturx, fp)
+    bt_df = formatage.vers_facturx(consignes, facturx, fp)
 
 if __name__ == "__main__":
     main()

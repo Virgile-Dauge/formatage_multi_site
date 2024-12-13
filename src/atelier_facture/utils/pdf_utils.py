@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import pymupdf
 
-from logger_config import logger
+from utils import logger
 # ====================== Utilitaires =======================
 
 def human_readable_size(size_in_bytes: int) -> str:
