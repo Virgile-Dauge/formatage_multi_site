@@ -168,16 +168,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    # p = Path("~/data/enargia/tests/").expanduser()
-    # ip = p / 'extrait'
-    # ep = p / 'enrichi'
-    # fp = p / 'facturx'
-    # df = pd.read_csv(ip / 'todo.csv', sep=',', encoding='utf-8', dtype=str)
-    # detection(df)
-    # print(df)
-    # result = fusion_groupes(df, ep)
-    # print(df)
-    # bt_df = vers_facturx(df, p / 'bt.csv', fp)
-    # df.to_csv(p / "todo_enrichi.csv", index=False)
-    # bt_df.to_csv(p / "bt_up.csv", index=False)
-    # print(result)
