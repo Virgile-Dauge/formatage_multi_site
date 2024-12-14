@@ -1,5 +1,19 @@
 # Atelier Facture
 
+## Instalation
+
+```bash
+pip install atelier_facture
+```
+
+## Usage
+
+```bash
+atelier_facture ~/chemin/atelier -i fichier.zip 
+```
+
+l'option `-v` ou `-vv` permet d'augmenter le niveau de verbosité des logs.
+
 ## Fonctionnement général
 
 ```mermaid
@@ -64,7 +78,7 @@ flowchart LR
     end
 
     %% Sous-graphe FacturX
-    subgraph FacturX_Details [Étape 4 : FacturX]
+    subgraph FacturX_Details [Étape 4 : Formatage]
         direction TB
         D_input@{shape: lean-r, label: "Entrées :
         PDFs de factures unitaires
