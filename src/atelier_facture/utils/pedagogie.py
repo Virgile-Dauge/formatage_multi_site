@@ -17,6 +17,9 @@ def afficher_arborescence_travail(console:Console, p:Path, ip:Path, ep:Path, fp:
     tree = Tree(f"📁 {p}")
     extrait = tree.add(f"[bold blue]{ip.name}[/bold blue]")
     extrait.add("[green]Fichiers extraits depuis le Zip[/green]")
+    extrait.add("[green]consignes.csv[/green] (consignes extraites du Zip)")
+    extrait.add("[green]facturx.csv[/green] (données Factur-X extraites du Zip)")
+    extrait.add("[green]extrait.csv[/green] (récap des données extraites du zip)")
     
     enrichi = tree.add(f"[bold blue]{ep.name}[/bold blue]")
     enrichi.add("[green]Fichiers générés (tableaux, groupements enrichis, groupement mono)[/green]")
@@ -24,9 +27,8 @@ def afficher_arborescence_travail(console:Console, p:Path, ip:Path, ep:Path, fp:
     facturx = tree.add(f"[bold blue]{fp.name}[/bold blue]")
     facturx.add("[green]XMLs et PDFs Factur-X générés[/green]")
 
-    tree.add("[green]todo.csv[/green] (consignes extraites du Zip)")
-    tree.add("[green]bt.csv[/green] (données Factur-X extraites du Zip)")
-    tree.add("[green]todo_enrichi.csv[/green] (consignes enrichies des chemins des fichiers enrichis créés)")
+    tree.add("[green]consignes_consolidees.csv[/green] (consignes enrichies des chemins des fichiers enrichis créés)")
+    tree.add("[green]facturx_consolidees.csv[/green] (consignes enrichies des chemins des fichiers enrichis créés)")
     
     console.print(tree)
     console.print("\n[italic]Explication de l'arborescence :[/italic]")
