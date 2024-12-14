@@ -39,6 +39,7 @@ def main():
         extrait, consignes = extraction.process_zip(input_path, ip)
         extrait.to_csv(ip / 'extrait.csv')
     else:
+        # Dans le cas ou aucun zip n'est fourni, on charge les fichiers csv issus d'une précédente extraction
         extrait = pd.read_csv(ip / 'extrait.csv', sep=',', encoding='utf-8', dtype=str)
         consignes = pd.read_csv(ip / 'consignes.csv', sep=',', encoding='utf-8', dtype=str)
     facturx = pd.read_csv(ip / 'facturx.csv', sep=',', encoding='utf-8', dtype=str)
