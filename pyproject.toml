@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "atelier-facture"
-version = "1.0.17"
+version = "1.0.19"
 description = ""
 authors = ["Virgile <virgile.dauge@pm.me>"]
 license = "GPLv3"
