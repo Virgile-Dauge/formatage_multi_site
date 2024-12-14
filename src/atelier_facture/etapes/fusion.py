@@ -55,7 +55,7 @@ def fusion_groupes(df: DataFrame, output_dir: Path):
                     to_concat.append(fichier)
 
             # Fichier de groupement enrichi 
-            pdf_utils.concat_pdfs(to_concat, enhanced_pdf)
+            pdf_utils.concat_pdfs(to_concat, enhanced_pdf, metadata={'title': f"Facture {group_meta['id']}"})
             # compressed_pdf = enhanced_pdf.with_name(f"{enhanced_pdf.stem}_compressed{enhanced_pdf.suffix}")
             # compress_pdf(enhanced_pdf, compressed_pdf)
             pdf_utils.compress_pdf_inplace(enhanced_pdf)

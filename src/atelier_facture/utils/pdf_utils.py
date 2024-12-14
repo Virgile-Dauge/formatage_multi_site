@@ -160,7 +160,7 @@ def obtenir_lignes_regroupement(texte_regroupement: str, fontname: str, fontsize
         lignes.append(texte_regroupement)
     return lignes
 
-def partial_pdf_copy(doc: pymupdf.Document, start_page: int, end_page: int, output_path: Path) -> None:
+def partial_pdf_copy(doc: pymupdf.Document, start_page: int, end_page: int, output_path: Path, metadata: dict|None=None) -> None:
     """
     Crée un nouveau fichier PDF à partir des pages spécifiées d'un document source,
     et ajoute les métadonnées spécifiées.
@@ -176,10 +176,12 @@ def partial_pdf_copy(doc: pymupdf.Document, start_page: int, end_page: int, outp
         for page_number in range(start_page, end_page):
             new_doc.insert_pdf(doc, from_page=page_number, to_page=page_number)
 
+        if metadata is not None:
+            new_doc.set_metadata(metadata)
         # Sauvegarder le nouveau fichier PDF
         new_doc.save(output_path)
 
-def concat_pdfs(paths: list[Path], output_path: Path) -> None:
+def concat_pdfs(paths: list[Path], output_path: Path, metadata: dict|None=None) -> None:
     """
     Concatène une liste de fichiers PDF en un seul fichier.
 
@@ -194,7 +196,8 @@ def concat_pdfs(paths: list[Path], output_path: Path) -> None:
                 # Ajouter chaque page du document actuel au PDF final
                 for page_index in range(len(pdf_a_ajouter)):
                     pdf_final.insert_pdf(pdf_a_ajouter, from_page=page_index, to_page=page_index)
-        
+        if metadata is not None:
+            pdf_final.set_metadata(metadata)
         # Enregistrer le PDF final
         pdf_final.save(str(output_path))
 

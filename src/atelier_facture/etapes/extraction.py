@@ -155,9 +155,9 @@ def split_pdf_enhanced(pdf_path: str, output_folder: Path) -> dict[str, str]:
             
             # Définir le chemin de sauvegarde du fichier PDF
             output_path: Path = output_folder / f"{filename}.pdf"
-          
+            
             # Créer le PDF avec les pages séléctionnées
-            pdf_utils.partial_pdf_copy(doc, start_page, end_page, output_path)
+            pdf_utils.partial_pdf_copy(doc, start_page, end_page, output_path, metadata={"title": f"Facture {data['id']}"})
 
             transformations = [
                 (pdf_utils.remplacer_texte_doc, "Votre espace client  : https://client.enargia.eus", "Votre espace client : https://suiviconso.enargia.eus"),
