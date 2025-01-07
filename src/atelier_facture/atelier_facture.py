@@ -55,12 +55,13 @@ def main():
 
     # =======================Étape 3: Création des pdfs enrichis=======================
     console.print(Panel.fit("Étape 3: Création des pdfs enrichis", style="bold magenta"))
-    result = fusion.fusion_groupes(consignes, ep)
-    print(result)
+    enrichis = fusion.fusion_groupes(consignes, ep)
+    print(enrichis)
+    print(enrichis.columns)
     #etat_avancement(console, df, ip, ep, fp)
     # =======================Étape 4: Création des factures Factur-X===================
     console.print(Panel.fit("Étape 4: Création des factures Factur-X", style="bold magenta"))
-    bt_df = formatage.vers_facturx(consignes, facturx, fp)
+    bt_df = formatage.vers_facturx(enrichis, facturx, fp)
 
 if __name__ == "__main__":
     main()
