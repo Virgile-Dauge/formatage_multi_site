@@ -46,7 +46,7 @@ def _validate_file_dict(file_dict: dict[str, str], format_type: str) -> None:
         raise ValueError(f"Missing required keys. Required: {required_keys}")
     
     if not re.match(r'^\d{14}$', file_dict['id']):
-        raise ValueError("id must be a 14-digit number")
+        raise ValueError(f"id must be a 14-digit number. Found instead :{file_dict['id']}")
     
     if format_type == 'pdl':
         if 'pdl' not in file_dict or not re.match(r'^\d{14}$', file_dict['pdl']):
