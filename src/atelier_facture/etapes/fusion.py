@@ -6,6 +6,9 @@ from atelier_facture.utils import file_naming, pdf_utils, export_table_as_pdf
 from atelier_facture.utils import logger
 
 def fusion_groupes(df: DataFrame, output_dir: Path):
+    df = df.copy()
+    # Supprimer les lignes où 'id' est NaN ou une chaîne 'nan'/'NaN'
+    df = df[~df['id'].astype(str).str.strip().isin([None, 'nan', 'NaN'])]
 
     df.sort_values(['groupement', 'type', 'pdl'], inplace=True)
     # Ajout de la colonne 'fichier_enrichi' si elle n'existe pas
