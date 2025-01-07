@@ -1,4 +1,5 @@
 from pandas import DataFrame
+from atelier_facture.utils import logger
 
 def detection_type(df: DataFrame) -> DataFrame:
     """
@@ -17,7 +18,10 @@ def detection_type(df: DataFrame) -> DataFrame:
     groupement_counts = df['groupement'].value_counts()
     unique_groupements = groupement_counts[groupement_counts == 1].index
     df.loc[df['groupement'].isin(unique_groupements), 'type'] = 'mono'
-
+    # Apply zfill only to valid numeric-like strings
+    df['id'] = df['id'].apply(
+    lambda x: x.zfill(14) if x.isdigit() else x
+    )
     return df
 
 def consolidation_consignes(extrait: DataFrame, consignes: DataFrame) -> DataFrame:
@@ -30,9 +34,33 @@ def consolidation_consignes(extrait: DataFrame, consignes: DataFrame) -> DataFra
 
     # Faire un merge entre 'consignes_groupement' et 'extrait' sur la clé 'groupement'
     merged = consignes_groupement.merge(extrait[['groupement', 'id']], on='groupement', suffixes=('_consignes', '_extrait'))
-    # Mettre à jour la colonne 'id' de 'consignes' à partir de 'id' de 'extrait'
-    consignes.loc[consignes['type'] == 'groupement', 'id'] = merged['id_extrait'].values
 
+    if len(consignes_groupement) != len(merged):
+        logger.warning(
+            f"Incohérence dans les tailles des données : consignes_groupement contient {len(consignes_groupement)} lignes, "
+            f"mais seulement {len(merged)} lignes fusionnées. Certaines clés 'groupement' pourraient manquer dans 'extrait'."
+        )
+    # Mettre à jour la colonne 'id' de 'consignes' à partir de 'id' de 'extrait'
+    # Crée un dictionnaire pour le mapping
+    mapping = merged.set_index('groupement')['id_extrait'].to_dict()
+
+    # Met à jour la colonne 'id' en utilisant map
+    consignes.loc[consignes['type'] == 'groupement', 'id'] = consignes.loc[
+        consignes['type'] == 'groupement', 'groupement'
+    ].map(mapping)
+    # consignes.loc[consignes['type'] == 'groupement', 'id'] = merged['id_extrait'].values
+    
+    non_matching_ids = set(consignes['id']).difference(set(extrait['id']))
+
+    # Filtrer les lignes correspondantes dans consignes
+    non_matching_rows = consignes[consignes['id'].isin(non_matching_ids)]
+
+    # Log un warning par ID non matché, incluant le groupement
+    for _, row in non_matching_rows.iterrows():
+        logger.warning(
+            f"ID non trouvé dans extrait : {row['id']} | Groupement : {row['groupement']} | Type : {row.get('type', 'N/A')}"
+        )
+    
     # Fusion des données extraites dans les consignes sur clé "id"
     consolide = consignes.merge(extrait[['id', 'date', 'fichier_extrait']], on='id', how='left', suffixes=('', '_extrait'))
 
@@ -46,7 +74,6 @@ def consolidation_facturx(consignes_consolidees: DataFrame, facturx: DataFrame) 
     print(consignes_groupement.columns)
     print(facturx.columns)
     facturx = facturx.merge(consignes_groupement[['groupement', 'id']], on='groupement', how='left', suffixes=('', '_consignes'))
-
     if 'id_consignes' in facturx.columns:
         facturx['id'] = facturx['id'].combine_first(facturx['id_consignes'])
         facturx.drop(columns=['id_consignes'], inplace=True)
