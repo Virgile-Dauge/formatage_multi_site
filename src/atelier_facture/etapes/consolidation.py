@@ -60,7 +60,7 @@ def consolidation_consignes(extrait: DataFrame, consignes: DataFrame) -> DataFra
         logger.warning(
             f"ID non trouvé dans extrait : {row['id']} | Groupement : {row['groupement']} | Type : {row.get('type', 'N/A')}"
         )
-    
+    non_matching_rows.to_csv('missing.csv')
     # Fusion des données extraites dans les consignes sur clé "id"
     consolide = consignes.merge(extrait[['id', 'date', 'fichier_extrait']], on='id', how='left', suffixes=('', '_extrait'))
 
@@ -69,11 +69,20 @@ def consolidation_consignes(extrait: DataFrame, consignes: DataFrame) -> DataFra
 
 def consolidation_facturx(consignes_consolidees: DataFrame, facturx: DataFrame) -> DataFrame:
 
-    # Filtrer les lignes de 'consignes' où 'type' est égal à 'groupement'
+    # Consolidation des groupement multi
     consignes_groupement = consignes_consolidees[consignes_consolidees['type'] == 'groupement']
     print(consignes_groupement.columns)
     print(facturx.columns)
     facturx = facturx.merge(consignes_groupement[['groupement', 'id']], on='groupement', how='left', suffixes=('', '_consignes'))
+    if 'id_consignes' in facturx.columns:
+        facturx['id'] = facturx['id'].combine_first(facturx['id_consignes'])
+        facturx.drop(columns=['id_consignes'], inplace=True)
+
+    # Consolidation des groupement mono
+    consignes_mono = consignes_consolidees[consignes_consolidees['type'] == 'mono']
+    print(consignes_mono.columns)
+    print(facturx.columns)
+    facturx = facturx.merge(consignes_mono[['groupement', 'id']], on='groupement', how='left', suffixes=('', '_consignes'))
     if 'id_consignes' in facturx.columns:
         facturx['id'] = facturx['id'].combine_first(facturx['id_consignes'])
         facturx.drop(columns=['id_consignes'], inplace=True)
