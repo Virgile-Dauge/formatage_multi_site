@@ -89,7 +89,8 @@ def format_extracted_data(data: dict[str, list[str|tuple[str]]]) -> dict[str, st
         formatted_data.pop('pdl')
     
     if 'membre' in formatted_data:
-        formatted_data['membre'] = file_naming.abbreviate_long_text_to_acronym(formatted_data['membre'], 15)
+        # formatted_data['membre'] = file_naming.abbreviate_long_text_to_acronym(formatted_data['membre'], 15)
+        ...
 
     return formatted_data
 
